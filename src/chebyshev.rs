@@ -69,14 +69,17 @@ impl<E: Copy + std::fmt::Debug + ScalarOperand + std::ops::AddAssign + Scalar<Re
         let deriv = self.deriv(1);
         let roots = deriv.roots()?;
 
+
         Ok(roots.into_iter()
-            .all(|root| (root < - E::one()) && (root > E::one())))
+            .all(|root| (root < - E::one()) || (root > E::one())))
     }
 
     /// Compute the derivative of order `cnt` of the Chebyshev Polynomial
     ///
     /// ```
     fn deriv(&self, cnt: usize) -> ChebyshevPolynomial<E> {
+        dbg!(&cnt);
+        dbg!(&self.n());
         match cnt {
             0 => self.clone(),
             cnt if cnt >= self.n() => Self {
@@ -121,6 +124,7 @@ impl<E: Copy + std::fmt::Debug + ScalarOperand + std::ops::AddAssign + Scalar<Re
             _ => {
                 let m = self.companion_matrix()?;
                 let mut r = m.eigvals()?.into_iter()
+                    .filter(|x| x.im() == E::zero())
                     .map(|x| x.re())
                     .collect::<Vec<_>>();
 
@@ -331,6 +335,28 @@ mod test {
         approx::assert_relative_eq!(-0.5, roots[1]);
         approx::assert_relative_eq!(0.19171356, roots[2], max_relative=1e-5);
         approx::assert_relative_eq!(0.83987462, roots[3], max_relative=1e-5);
+    }
+
+    #[test]
+    fn chebyshev_roots_are_correct_for_order_4() {
+        let poly = ChebyshevPolynomial {
+            coeff: vec![-1., 1., -1., 1.],
+            domain: Range {
+                start: -1.,
+                end: 1.,
+            },
+            window: Range {
+                start: -1.,
+                end: 1.,
+            },
+        };
+        let roots = poly.roots().unwrap();
+
+
+        assert_eq!(3, roots.len());
+        approx::assert_relative_eq!(-0.5, roots[0], max_relative=1e-5);
+        approx::assert_relative_eq!(0.0, roots[1], max_relative=1e-5);
+        approx::assert_relative_eq!(1.0, roots[2], max_relative=1e-5);
     }
 }
 

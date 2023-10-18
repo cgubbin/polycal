@@ -54,10 +54,10 @@ where
         for n in 1..n_max {
             match self.fit(n) {
                 Ok(fit) => {
-                    // if fit.solution.is_monotonic()? {
-                    //     fits.push(fit);
-                    // }
-                    fits.push(fit);
+                    if fit.solution.is_monotonic()? {
+                        fits.push(fit);
+                    }
+                    //fits.push(fit);
                 }
                 Err(err) => eprintln!("{:?}", err),
             }
@@ -102,11 +102,6 @@ where
         // }
     }
 
-    fn chi_2_percentile(&'a self, nu: usize) -> E {
-        let distrib: ChiSquare<f64> = ChiSquare::new(u32::try_from(nu).unwrap());
-        E::from(distrib.quantile(0.95)).unwrap()
-
-    }
 
     fn score(&'a self, fit: &ChebyshevPolynomial<E>) -> E {
         let chi_2_score = self.chi_2(fit);
@@ -272,12 +267,13 @@ mod test {
         let state = 40;
         let mut rng = Isaac64Rng::seed_from_u64(state);
 
-        let n = 5;
-        let m = rng.gen_range(1000..2000);
+        let m = rng.gen_range(100..200);
 
-        let coeff = (0..n)
-            .map(|_| rng.gen())
-            .collect::<Vec<f64>>();
+        let coeff = vec![0.6263732815125124, 0.7610862425514004, -0.10];//, 0.05, 0.045, 0.025];
+        let coeff = vec![0.6263732815125124, 0.7610862425514004, -0.2, 0.05, 0.045, 0.025];
+        let n = coeff.len();
+
+        dbg!(&coeff);
 
         let cheb = ChebyshevPolynomial {
             coeff: coeff.clone(),
@@ -285,20 +281,17 @@ mod test {
             domain: std::ops::Range { start: -1., end: 1. },
         };
 
+        dbg!(cheb.is_monotonic());
+
         let x = (0..m)
             .map(|x| x as f64 / (m -1) as f64)
             .map(|x| 2. * x - 1.)
             .collect::<Vec<f64>>();
 
-        dbg!(&x);
-
-
         let y = x
             .iter()
             .map(|x| cheb.eval(*x))
             .collect::<Vec<_>>();
-
-        dbg!(&y);
 
         let x = arr1(&x);
         let y = arr1(&y);
@@ -310,9 +303,8 @@ mod test {
 
         let problem = Problem::new(&x, &y, uncertainties, super::ScoringStrategy::AIC);
 
-        let sol = problem.solve(10).unwrap();
+        let sol = problem.solve(20).unwrap();
 
-        dbg!(&coeff);
 
 
 
