@@ -1,6 +1,6 @@
-use std::ops::Range;
+use std::ops::{Range, AddAssign};
 
-use ndarray::{arr1, s, Array1, Array2, ScalarOperand};
+use ndarray::{arr1, s, Array1, Array2, ScalarOperand, ArrayView2};
 use ndarray_linalg::{EigVals, Scalar, Lapack};
 
 use crate::Result;
@@ -12,15 +12,22 @@ pub(crate) struct ChebyshevPolynomial<E> {
     pub(crate) window: Range<E>,
 }
 
-impl<E: Copy + std::fmt::Debug + ScalarOperand + std::ops::AddAssign + Scalar<Real = E> + Lapack + std::cmp::PartialOrd> ChebyshevPolynomial<E>
+impl<E> ChebyshevPolynomial<E>
 {
     pub(crate) fn n(&self) -> usize {
         self.coeff.len()
     }
+}
 
+impl<E: Clone> ChebyshevPolynomial<E>
+{
     fn coeff(&self) -> Vec<E> {
         self.coeff.clone()
     }
+}
+
+impl<E: PartialOrd + Scalar<Real = E>> ChebyshevPolynomial<E>
+{
 
     pub(crate) fn constant(n: usize) -> Self {
         Self {
@@ -29,7 +36,10 @@ impl<E: Copy + std::fmt::Debug + ScalarOperand + std::ops::AddAssign + Scalar<Re
             window: Range { start: -E::one(), end: E::one() },
         }
     }
+}
 
+impl<E: Scalar<Real = E>> ChebyshevPolynomial<E>
+{
     pub(crate) fn eval(&self, t: E) -> E {
         let (c0, c1) = match self.n() < 3 {
             true => (
@@ -51,6 +61,27 @@ impl<E: Copy + std::fmt::Debug + ScalarOperand + std::ops::AddAssign + Scalar<Re
         c0 + t * c1
     }
 
+    pub(crate) fn eval_u(&self, t: E) -> E {
+        let (c0, c1) = match self.n() < 3 {
+            true => (
+                self.coeff.get(0).copied().unwrap_or(E::zero()),
+                self.coeff.get(1).copied().unwrap_or(E::zero()),
+            ),
+            _ => {
+                let t2 = t + t;
+                let mut c0 = self.coeff[self.n() - 2];
+                let mut c1 = self.coeff[self.n() - 1];
+                for i in 3..(self.n() + 1) {
+                    let tmp = c0;
+                    c0 = self.coeff[self.n() - i] - c1;
+                    c1 = tmp + c1 * t2;
+                }
+                (c0, c1)
+            }
+        };
+        c0 + (t + t) * c1
+    }
+
     pub(crate) fn eval_as_vec(&self, t: E) -> Vec<E> {
         match self.n() {
             1 => vec![self.coeff[0]],
@@ -64,6 +95,55 @@ impl<E: Copy + std::fmt::Debug + ScalarOperand + std::ops::AddAssign + Scalar<Re
             }
         }
     }
+
+    /// Evaluate `q`
+    ///
+    /// This is the inverse of the domain, multiplied by the first derivative of the series in the
+    /// scaled coordinate system.
+    ///
+    /// The first derivative of a Chebyshev function of the first-kind is d_t T_n(t) = n
+    /// U_{n-1}(t), so we calculate a vector of Chebyshev function of the second kind (U_n), then
+    /// sum the product multiplied by the coefficients of the series.
+    fn evaluate_q(&self, t: E) -> E {
+        let u_vec = match self.n() {
+            1 => vec![E::one()],
+            2 => vec![E::one(), t + t],
+            _ => {
+                let mut vals = vec![E::one(), t + t];
+                for ii in 2..self.n() {
+                    vals.push((E::one() + E::one()) * t * vals[ii - 1] - vals[ii - 2]);
+                }
+                vals
+            }
+        };
+
+        (E::one() + E::one()) / (self.domain.end - self.domain.start)
+            * u_vec.into_iter().zip(&self.coeff).enumerate()
+                .fold(E::zero(), |a, (ii, (un, ai))| a + E::from(ii + 1).unwrap() * un * *ai)
+
+    }
+
+    pub(crate) fn standard_uncertainty_direct(&self, t0: E, ux: E, cov: ArrayView2<'_, E>) -> E {
+        let q = self.evaluate_q(t0);
+        let g: Array1<E> = self.eval_as_vec(t0).into();
+        (q.powi(2) * ux.powi(2) + g.dot(&cov.dot(&g))).sqrt()
+    }
+
+    pub(crate) fn standard_uncertainty_inverse(&self, t0: E, uy: E, cov: ArrayView2<'_, E>) -> E {
+        let q = self.evaluate_q(t0);
+        let g: Array1<E> = self.eval_as_vec(t0).into();
+        E::one() / q.powi(2) * (uy.powi(2) + g.dot(&cov.dot(&g)))
+    }
+}
+
+impl<E> ChebyshevPolynomial<E> {
+    pub(crate) fn inverse_eval(&self, y0: E) -> E {
+        todo!()
+    }
+}
+
+impl<E: ScalarOperand + AddAssign + Scalar<Real = E> + Lapack + PartialOrd> ChebyshevPolynomial<E>
+{
 
     pub(crate) fn is_monotonic(&self) -> Result<bool> {
         let deriv = self.deriv(1);

@@ -26,9 +26,15 @@ pub struct Problem<'a, E> {
     pub(crate) strategy: ScoringStrategy,
 }
 
+pub struct PolyfitResult<E> {
+    coeff: Array1<E>,
+    covariance: Array2<E>,
+}
+
+
 impl<'a, E> Problem<'a, E>
 where
-    E:  Copy + std::fmt::Debug + ScalarOperand + std::ops::AddAssign + Scalar<Real = E> + Lapack + std::cmp::PartialOrd + Signed,
+    E:  std::fmt::Debug + ScalarOperand + std::ops::AddAssign + Scalar<Real = E> + Lapack + std::cmp::PartialOrd + Signed,
 {
     fn new(x: &'a Array1<E>, y: &'a Array1<E>, uncertainties: Covariance<'a, E>, strategy: ScoringStrategy) -> Self {
         let x_max = x.iter().max_by(|a, b| a.partial_cmp(&b).unwrap()).unwrap().clone();
@@ -49,7 +55,7 @@ where
         self.t.len()
     }
 
-    fn solve(&'a self, n_max: usize) -> Result<()> {
+    fn solve(&'a self, n_max: usize) -> Result<ChebyshevFitResult<E>> {
         let mut fits = vec![];
         for n in 1..n_max {
             match self.fit(n) {
@@ -57,7 +63,6 @@ where
                     if fit.solution.is_monotonic()? {
                         fits.push(fit);
                     }
-                    //fits.push(fit);
                 }
                 Err(err) => eprintln!("{:?}", err),
             }
@@ -68,7 +73,6 @@ where
             .map(|fit| self.score(&fit.solution))
             .collect::<Vec<_>>();
 
-        dbg!(&scores);
 
         // Check the scores vec is not monotonous
         let diffs = scores.windows(2)
@@ -89,17 +93,9 @@ where
 
         let nu = self.m() - best_fit.solution.n() - 1;
 
+        // TODO Chi-2 validation
 
-        println!("{:?}", best_score);
-        dbg!(&best_fit.solution);
-        Ok(())
-        // match best_score < self.chi_2_percentile(nu) {
-        //     true => Ok(()),
-        //     false => {
-        //         println!("{best_score:?}, {:?}", self.chi_2_percentile(nu));
-        //         panic!();
-        //     }
-        // }
+        Ok(best_fit)
     }
 
 
@@ -135,7 +131,7 @@ where
         }?;
 
         Ok( ChebyshevFitResult {
-            solution: ChebyshevPolynomial { coeff: result.solution.to_vec(), domain: self.domain.clone(), window: Range { start: -E::one(), end: E::one() } },
+            solution: ChebyshevPolynomial { coeff: result.coeff.to_vec(), domain: self.domain.clone(), window: Range { start: -E::one(), end: E::one() } },
             covariance: result.covariance,
         })
     }
@@ -164,15 +160,9 @@ fn outer_product<T: Scalar>(a: &Array1<T>, b: &Array1<T>) -> Result<Array2<T>> {
     Ok(ndarray::linalg::kron(&a, &b))
 }
 
-struct ChebyshevFitResult<E> {
-    solution: ChebyshevPolynomial<E>,
-    covariance: Array2<E>,
-}
-
-#[derive(Debug)]
-struct PolyfitResult<E> {
-    solution: Array1<E>,
-    covariance: Array2<E>,
+pub struct ChebyshevFitResult<E> {
+    pub(crate) solution: ChebyshevPolynomial<E>,
+    pub(crate) covariance: Array2<E>,
 }
 
 fn weighted_least_squares<'a, E: Lapack + Scalar<Real = E> + ScalarOperand>(
@@ -197,12 +187,12 @@ fn weighted_least_squares<'a, E: Lapack + Scalar<Real = E> + ScalarOperand>(
 
     let result = lhs.least_squares(&rhs)?;
 
-    let solution = (&result.solution.t() / &scaling).t().to_owned();
+    let coeff = (&result.solution.t() / &scaling).t().to_owned();
 
     let covariance = (lhs.t().dot(&lhs)).inv()? / outer_product(&scaling, &scaling)?;
 
 
-    Ok( PolyfitResult { solution, covariance } )
+    Ok( PolyfitResult { coeff, covariance } )
 
 
 }
