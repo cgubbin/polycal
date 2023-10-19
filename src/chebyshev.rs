@@ -1,8 +1,14 @@
-use std::ops::{Range, AddAssign};
+use std::ops::{AddAssign, Range};
 
-use argmin::{core::{Gradient, Hessian, CostFunction, ArgminFloat, Executor, observers::{SlogLogger, ObserverMode}}, solver::{linesearch::MoreThuenteLineSearch, newton::NewtonCG}};
-use ndarray::{arr1, s, Array1, Array2, ScalarOperand, ArrayView2};
-use ndarray_linalg::{EigVals, Scalar, Lapack};
+use argmin::{
+    core::{
+        observers::{ObserverMode, SlogLogger},
+        ArgminFloat, CostFunction, Executor, Gradient, Hessian,
+    },
+    solver::{linesearch::MoreThuenteLineSearch, newton::NewtonCG},
+};
+use ndarray::{arr1, s, Array1, Array2, ArrayView2, ScalarOperand};
+use ndarray_linalg::{EigVals, Lapack, Scalar};
 
 use crate::Result;
 
@@ -13,34 +19,35 @@ pub(crate) struct ChebyshevPolynomial<E> {
     pub(crate) window: Range<E>,
 }
 
-impl<E> ChebyshevPolynomial<E>
-{
+impl<E> ChebyshevPolynomial<E> {
     pub(crate) fn n(&self) -> usize {
         self.coeff.len()
     }
 }
 
-impl<E: Clone> ChebyshevPolynomial<E>
-{
+impl<E: Clone> ChebyshevPolynomial<E> {
     fn coeff(&self) -> Vec<E> {
         self.coeff.clone()
     }
 }
 
-impl<E: PartialOrd + Scalar<Real = E>> ChebyshevPolynomial<E>
-{
-
+impl<E: PartialOrd + Scalar<Real = E>> ChebyshevPolynomial<E> {
     pub(crate) fn constant(n: usize) -> Self {
         Self {
             coeff: vec![E::one(); n],
-            domain: Range { start: -E::one(), end: E::one() },
-            window: Range { start: -E::one(), end: E::one() },
+            domain: Range {
+                start: -E::one(),
+                end: E::one(),
+            },
+            window: Range {
+                start: -E::one(),
+                end: E::one(),
+            },
         }
     }
 }
 
-impl<E: Scalar<Real = E>> ChebyshevPolynomial<E>
-{
+impl<E: Scalar<Real = E>> ChebyshevPolynomial<E> {
     /// Evaluate the sum of the series using Clenshaw recursion
     pub(crate) fn eval(&self, t: E) -> E {
         let (c0, c1) = match self.n() < 3 {
@@ -69,7 +76,7 @@ impl<E: Scalar<Real = E>> ChebyshevPolynomial<E>
             1 => vec![E::one()],
             2 => vec![E::one(), t],
             _ => {
-                let mut vals = vec![E::one(),  t];
+                let mut vals = vec![E::one(), t];
                 for ii in 2..self.n() {
                     vals.push((E::one() + E::one()) * t * vals[ii - 1] - vals[ii - 2]);
                 }
@@ -121,7 +128,6 @@ impl<E: Scalar<Real = E>> ChebyshevPolynomial<E>
 
     fn evaluate_q(&self, t: E) -> E {
         (E::one() + E::one()) / (self.domain.end - self.domain.start) * self.deriv(1).eval(t)
-
     }
 
     pub(crate) fn standard_uncertainty_direct(&self, t0: E, ux: E, cov: ArrayView2<'_, E>) -> E {
@@ -146,7 +152,10 @@ impl<'a, E: ArgminFloat + Scalar<Real = E>> CostFunction for InverseProblem<'a, 
     type Param = E;
     type Output = E;
 
-    fn cost(&self, param: &Self::Param) -> ::std::result::Result<Self::Output, argmin::core::Error> {
+    fn cost(
+        &self,
+        param: &Self::Param,
+    ) -> ::std::result::Result<Self::Output, argmin::core::Error> {
         Ok(Scalar::abs(self.problem.eval(*param) - self.y0))
     }
 }
@@ -155,7 +164,10 @@ impl<'a, E: ArgminFloat + Scalar<Real = E>> Gradient for InverseProblem<'a, E> {
     type Param = E;
     type Gradient = E;
 
-    fn gradient(&self, param: &Self::Param) -> ::std::result::Result<Self::Gradient, argmin::core::Error> {
+    fn gradient(
+        &self,
+        param: &Self::Param,
+    ) -> ::std::result::Result<Self::Gradient, argmin::core::Error> {
         Ok(self.problem.deriv(1).eval(*param))
     }
 }
@@ -164,15 +176,25 @@ impl<'a, E: ArgminFloat + Scalar<Real = E>> Hessian for InverseProblem<'a, E> {
     type Param = E;
     type Hessian = E;
 
-    fn hessian(&self, param: &Self::Param) -> ::std::result::Result<Self::Hessian, argmin::core::Error> {
+    fn hessian(
+        &self,
+        param: &Self::Param,
+    ) -> ::std::result::Result<Self::Hessian, argmin::core::Error> {
         Ok(self.problem.deriv(2).eval(*param))
     }
 }
 
-
 impl<E> ChebyshevPolynomial<E>
 where
-    E: ArgminFloat + Scalar<Real = E> + argmin_math::ArgminSub<E, E> + argmin_math::ArgminAdd<E, E> + argmin_math::ArgminZeroLike + argmin_math::ArgminConj + argmin_math::ArgminMul<E, E> + argmin_math::ArgminL2Norm<E> + argmin_math::ArgminDot<E, E>,
+    E: ArgminFloat
+        + Scalar<Real = E>
+        + argmin_math::ArgminSub<E, E>
+        + argmin_math::ArgminAdd<E, E>
+        + argmin_math::ArgminZeroLike
+        + argmin_math::ArgminConj
+        + argmin_math::ArgminMul<E, E>
+        + argmin_math::ArgminL2Norm<E>
+        + argmin_math::ArgminDot<E, E>,
 {
     pub(crate) fn inverse_eval(&self, y0: E) -> Result<E> {
         let cost = InverseProblem { problem: &self, y0 };
@@ -197,18 +219,15 @@ where
     }
 }
 
-impl<E: ScalarOperand + AddAssign + Scalar<Real = E> + Lapack + PartialOrd> ChebyshevPolynomial<E>
-{
-
+impl<E: ScalarOperand + AddAssign + Scalar<Real = E> + Lapack + PartialOrd> ChebyshevPolynomial<E> {
     pub(crate) fn is_monotonic(&self) -> Result<bool> {
         let deriv = self.deriv(1);
         let roots = deriv.roots()?;
 
-
-        Ok(roots.into_iter()
-            .all(|root| (root < - E::one()) || (root > E::one())))
+        Ok(roots
+            .into_iter()
+            .all(|root| (root < -E::one()) || (root > E::one())))
     }
-
 
     fn roots(&self) -> Result<Vec<E>> {
         match self.n() {
@@ -216,7 +235,9 @@ impl<E: ScalarOperand + AddAssign + Scalar<Real = E> + Lapack + PartialOrd> Cheb
             n if n == 2 => Ok(vec![-self.coeff[0] / self.coeff[1]]),
             _ => {
                 let m = self.companion_matrix()?;
-                let mut r = m.eigvals()?.into_iter()
+                let mut r = m
+                    .eigvals()?
+                    .into_iter()
                     .filter(|x| x.im() == E::zero())
                     .map(|x| x.re())
                     .collect::<Vec<_>>();
@@ -242,23 +263,25 @@ impl<E: ScalarOperand + AddAssign + Scalar<Real = E> + Lapack + PartialOrd> Cheb
         let c = arr1(&self.coeff());
 
         let mut scl = vec![E::one()];
-        scl.extend(std::iter::repeat((E::one()/(E::one() + E::one())).sqrt()).take(n-1));
+        scl.extend(std::iter::repeat((E::one() / (E::one() + E::one())).sqrt()).take(n - 1));
         let scl = arr1(&scl);
 
         let mut top = mat.slice_mut(s![1..;n+1]);
-        top +=  E::one() / (E::one() + E::one());
+        top += E::one() / (E::one() + E::one());
         top[0] = (E::one() / (E::one() + E::one())).sqrt();
 
-
         let mut bot = mat.slice_mut(s![n..;n+1]);
-        bot +=  E::one() / (E::one() + E::one());
+        bot += E::one() / (E::one() + E::one());
         bot[0] = (E::one() / (E::one() + E::one())).sqrt();
 
         let mut mat = mat.into_shape((n, n))?;
 
-        let curr_rcol = mat.slice(s![.., n-1]).to_owned();
-        mat.slice_mut(s![.., n-1])
-             .assign(&(curr_rcol - c.slice(s![..n]).mapv(|v| v / (E::one() + E::one()) / c[n]) * scl.mapv(|v| v / scl[n - 1])));
+        let curr_rcol = mat.slice(s![.., n - 1]).to_owned();
+        mat.slice_mut(s![.., n - 1]).assign(
+            &(curr_rcol
+                - c.slice(s![..n]).mapv(|v| v / (E::one() + E::one()) / c[n])
+                    * scl.mapv(|v| v / scl[n - 1])),
+        );
 
         Ok(mat)
     }
@@ -266,9 +289,9 @@ impl<E: ScalarOperand + AddAssign + Scalar<Real = E> + Lapack + PartialOrd> Cheb
 
 #[cfg(test)]
 mod test {
+    use super::ChebyshevPolynomial;
     use ndarray_rand::rand::{Rng, SeedableRng};
     use rand_isaac::Isaac64Rng;
-    use super::ChebyshevPolynomial;
     use std::ops::Range;
 
     #[test]
@@ -338,7 +361,6 @@ mod test {
         assert_eq!(expected, actual);
     }
 
-
     #[test]
     fn chebyshev_of_order_three_is_evaluated_correctly() {
         let state = 40;
@@ -387,14 +409,14 @@ mod test {
 
         let t0 = rng.gen();
         let scalar = poly.eval(t0);
-        let vector = poly.underlying_polys(t0).into_iter()
+        let vector = poly
+            .underlying_polys(t0)
+            .into_iter()
             .zip(coeff)
             .fold(0., |a, (t, c)| a + t * c);
 
-        approx::assert_relative_eq!(scalar, vector, max_relative=1e-10);
+        approx::assert_relative_eq!(scalar, vector, max_relative = 1e-10);
     }
-
-
 
     #[test]
     fn first_chebyshev_derivative_is_correct() {
@@ -445,7 +467,6 @@ mod test {
         };
         let roots = poly.roots().unwrap();
 
-
         assert_eq!(1, roots.len());
         approx::assert_relative_eq!(-0.5, roots[0]);
     }
@@ -464,7 +485,6 @@ mod test {
             },
         };
         let roots = poly.roots().unwrap();
-
 
         approx::assert_relative_eq!((-1. - 13f64.sqrt()) / 6.0, roots[0]);
         approx::assert_relative_eq!((-1. + 13f64.sqrt()) / 6.0, roots[1]);
@@ -485,12 +505,11 @@ mod test {
         };
         let roots = poly.roots().unwrap();
 
-
         assert_eq!(4, roots.len());
-        approx::assert_relative_eq!(-0.93158818, roots[0], max_relative=1e-5);
+        approx::assert_relative_eq!(-0.93158818, roots[0], max_relative = 1e-5);
         approx::assert_relative_eq!(-0.5, roots[1]);
-        approx::assert_relative_eq!(0.19171356, roots[2], max_relative=1e-5);
-        approx::assert_relative_eq!(0.83987462, roots[3], max_relative=1e-5);
+        approx::assert_relative_eq!(0.19171356, roots[2], max_relative = 1e-5);
+        approx::assert_relative_eq!(0.83987462, roots[3], max_relative = 1e-5);
     }
 
     #[test]
@@ -508,11 +527,9 @@ mod test {
         };
         let roots = poly.roots().unwrap();
 
-
         assert_eq!(3, roots.len());
-        approx::assert_relative_eq!(-0.5, roots[0], max_relative=1e-5);
-        approx::assert_relative_eq!(0.0, roots[1], max_relative=1e-5);
-        approx::assert_relative_eq!(1.0, roots[2], max_relative=1e-5);
+        approx::assert_relative_eq!(-0.5, roots[0], max_relative = 1e-5);
+        approx::assert_relative_eq!(0.0, roots[1], max_relative = 1e-5);
+        approx::assert_relative_eq!(1.0, roots[2], max_relative = 1e-5);
     }
 }
-

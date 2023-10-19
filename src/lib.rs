@@ -1,3 +1,7 @@
+#![allow(dead_code)]
+#![warn(clippy::pedantic)]
+#![warn(clippy::nursery)]
+
 mod builder;
 mod chebyshev;
 mod eval;

@@ -1,10 +1,10 @@
-use std::ops::{Range, AddAssign};
+use std::ops::{AddAssign, Range};
 
 use argmin::core::ArgminFloat;
 use ndarray_linalg::Scalar;
 
-use crate::Result;
 use crate::fit::ChebyshevFitResult;
+use crate::Result;
 
 #[derive(Debug)]
 pub struct Unsure<E> {
@@ -24,16 +24,27 @@ impl<E: Scalar<Real = E>> ChebyshevFitResult<E> {
         let standard_uncertainty = self.solution.standard_uncertainty_direct(
             t,
             stimulus.standard_uncertainty,
-            self.covariance.view()
+            self.covariance.view(),
         );
 
-        Ok(Unsure { estimate, standard_uncertainty })
+        Ok(Unsure {
+            estimate,
+            standard_uncertainty,
+        })
     }
 }
 
 impl<E> ChebyshevFitResult<E>
 where
-    E: ArgminFloat + Scalar<Real = E> + argmin_math::ArgminSub<E, E> + argmin_math::ArgminAdd<E, E> + argmin_math::ArgminZeroLike + argmin_math::ArgminConj + argmin_math::ArgminMul<E, E> + argmin_math::ArgminL2Norm<E> + argmin_math::ArgminDot<E, E>,
+    E: ArgminFloat
+        + Scalar<Real = E>
+        + argmin_math::ArgminSub<E, E>
+        + argmin_math::ArgminAdd<E, E>
+        + argmin_math::ArgminZeroLike
+        + argmin_math::ArgminConj
+        + argmin_math::ArgminMul<E, E>
+        + argmin_math::ArgminL2Norm<E>
+        + argmin_math::ArgminDot<E, E>,
 {
     /// Inverse evaluation y - p_n(x, a) = 0
     fn eval_from_response(&self, response: Unsure<E>) -> Result<Unsure<E>> {
@@ -41,8 +52,11 @@ where
         let standard_uncertainty = self.solution.standard_uncertainty_inverse(
             estimate,
             response.standard_uncertainty,
-            self.covariance.view()
+            self.covariance.view(),
         );
-        Ok(Unsure { estimate, standard_uncertainty })
+        Ok(Unsure {
+            estimate,
+            standard_uncertainty,
+        })
     }
 }
