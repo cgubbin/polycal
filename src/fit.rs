@@ -6,24 +6,24 @@ use num_traits::Signed;
 
 use crate::{ChebyshevPolynomial, Result};
 
-enum Covariance<'a, E> {
+pub enum Covariance<'a, E> {
     None,
     Uncertainty{ ux: Option<ArrayView1<'a, E>>, uy: ArrayView1<'a, E> },
     Covariance{ vx: Option<ArrayView2<'a, E>>, vy: ArrayView2<'a, E> },
 }
 
-enum ScoringStrategy {
+pub enum ScoringStrategy {
     AIC,
     AICc,
     BIC,
 }
 
-struct Problem<'a, E> {
-    t: Array1<E>,
-    y: ArrayView1<'a, E>,
-    uncertainties: Covariance<'a, E>,
-    domain: Range<E>,
-    strategy: ScoringStrategy,
+pub struct Problem<'a, E> {
+    pub(crate) t: Array1<E>,
+    pub(crate) y: ArrayView1<'a, E>,
+    pub(crate) uncertainties: Covariance<'a, E>,
+    pub(crate) domain: Range<E>,
+    pub(crate) strategy: ScoringStrategy,
 }
 
 impl<'a, E> Problem<'a, E>
