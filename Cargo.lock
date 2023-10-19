@@ -117,6 +117,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "327762f6e5a765692301e5bb513e0d9fef63be86bbc14528052b1cd3e6f03e07"
 
 [[package]]
+name = "blas-src"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bb48fbaa7a0cb9d6d96c46bac6cedb16f13a10aebcef1c4e73515aaae8c9909d"
+dependencies = [
+ "openblas-src",
+]
+
+[[package]]
 name = "cauchy"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -393,7 +402,6 @@ dependencies = [
  "lapack-sys",
  "netlib-src",
  "num-traits",
- "openblas-src",
  "thiserror",
 ]
 
@@ -657,10 +665,13 @@ version = "0.1.0"
 dependencies = [
  "approx 0.5.1",
  "argmin",
+ "argmin-math",
+ "blas-src",
  "ndarray",
  "ndarray-linalg",
  "ndarray-rand",
  "num-traits",
+ "openblas-src",
  "rand_isaac",
 ]
 

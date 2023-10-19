@@ -38,6 +38,7 @@
 			openblas
 			openssl
 			cpp-netlib
+			darwin.apple_sdk.frameworks.Security
 			];
 		    commonArgs = {
 			inherit src buildInputs nativeBuildInputs;

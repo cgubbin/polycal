@@ -1,5 +1,6 @@
 use std::ops::{Range, AddAssign};
 
+use argmin::{core::{Gradient, Hessian, CostFunction, ArgminFloat, Executor, observers::{SlogLogger, ObserverMode}}, solver::{linesearch::MoreThuenteLineSearch, newton::NewtonCG}};
 use ndarray::{arr1, s, Array1, Array2, ScalarOperand, ArrayView2};
 use ndarray_linalg::{EigVals, Scalar, Lapack};
 
@@ -96,6 +97,47 @@ impl<E: Scalar<Real = E>> ChebyshevPolynomial<E>
         }
     }
 
+    /// Compute the derivative of order `cnt` of the Chebyshev Polynomial
+    ///
+    /// ```
+    fn deriv(&self, cnt: usize) -> ChebyshevPolynomial<E> {
+        match cnt {
+            0 => self.clone(),
+            cnt if cnt >= self.n() => Self {
+                coeff: vec![],
+                domain: self.domain.clone(),
+                window: self.window.clone(),
+            },
+            cnt => {
+                let mut n = self.n();
+                let mut c = self.coeff();
+                let mut coeff = None;
+                for _ in 0..cnt {
+                    n -= 1;
+                    let mut der = vec![E::zero(); n];
+                    for jj in (2..=n).rev() {
+                        der[jj - 1] = E::from(2 * jj).unwrap() * c[jj];
+                        c[jj - 2] =
+                            c[jj - 2] + (E::from(jj).unwrap() * c[jj]) / E::from(jj - 2).unwrap();
+                    }
+
+                    if n > 1 {
+                        der[1] = E::from(4).unwrap() * c[2];
+                    }
+                    der[0] = c[1];
+                    c = der.clone();
+                    coeff = Some(der);
+                }
+
+                Self {
+                    coeff: coeff.unwrap(),
+                    domain: self.domain.clone(),
+                    window: self.window.clone(),
+                }
+            }
+        }
+    }
+
     /// Evaluate `q`
     ///
     /// This is the inverse of the domain, multiplied by the first derivative of the series in the
@@ -136,9 +178,63 @@ impl<E: Scalar<Real = E>> ChebyshevPolynomial<E>
     }
 }
 
-impl<E> ChebyshevPolynomial<E> {
-    pub(crate) fn inverse_eval(&self, y0: E) -> E {
-        todo!()
+struct InverseProblem<'a, E> {
+    problem: &'a ChebyshevPolynomial<E>,
+    y0: E,
+}
+
+impl<'a, E: ArgminFloat + Scalar<Real = E>> CostFunction for InverseProblem<'a, E> {
+    type Param = E;
+    type Output = E;
+
+    fn cost(&self, param: &Self::Param) -> ::std::result::Result<Self::Output, argmin::core::Error> {
+        Ok(Scalar::abs(self.problem.eval(*param) - self.y0))
+    }
+}
+
+impl<'a, E: ArgminFloat + Scalar<Real = E>> Gradient for InverseProblem<'a, E> {
+    type Param = E;
+    type Gradient = E;
+
+    fn gradient(&self, param: &Self::Param) -> ::std::result::Result<Self::Gradient, argmin::core::Error> {
+        Ok(self.problem.deriv(1).eval(*param))
+    }
+}
+
+impl<'a, E: ArgminFloat + Scalar<Real = E>> Hessian for InverseProblem<'a, E> {
+    type Param = E;
+    type Hessian = E;
+
+    fn hessian(&self, param: &Self::Param) -> ::std::result::Result<Self::Hessian, argmin::core::Error> {
+        Ok(self.problem.deriv(2).eval(*param))
+    }
+}
+
+
+impl<E> ChebyshevPolynomial<E>
+where
+    E: ArgminFloat + Scalar<Real = E> + argmin_math::ArgminSub<E, E> + argmin_math::ArgminAdd<E, E> + argmin_math::ArgminZeroLike + argmin_math::ArgminConj + argmin_math::ArgminMul<E, E> + argmin_math::ArgminL2Norm<E> + argmin_math::ArgminDot<E, E>,
+{
+    pub(crate) fn inverse_eval(&self, y0: E) -> Result<E> {
+        let cost = InverseProblem { problem: &self, y0 };
+        let init_param = E::zero();
+
+        // set up line search
+        let linesearch = MoreThuenteLineSearch::new();
+
+        // Set up solver
+        let solver = NewtonCG::new(linesearch);
+
+        // Run solver
+        let res = Executor::new(cost, solver)
+            .configure(|state| state.param(init_param).max_iters(100))
+            .add_observer(SlogLogger::term(), ObserverMode::Always)
+            .run()?;
+
+        let mut state = res.state().clone();
+        let param = state.take_param();
+
+        Ok(param.unwrap())
     }
 }
 
@@ -154,48 +250,6 @@ impl<E: ScalarOperand + AddAssign + Scalar<Real = E> + Lapack + PartialOrd> Cheb
             .all(|root| (root < - E::one()) || (root > E::one())))
     }
 
-    /// Compute the derivative of order `cnt` of the Chebyshev Polynomial
-    ///
-    /// ```
-    fn deriv(&self, cnt: usize) -> ChebyshevPolynomial<E> {
-        dbg!(&cnt);
-        dbg!(&self.n());
-        match cnt {
-            0 => self.clone(),
-            cnt if cnt >= self.n() => Self {
-                coeff: vec![],
-                domain: self.domain.clone(),
-                window: self.window.clone(),
-            },
-            cnt => {
-                let mut n = self.n();
-                let mut c = self.coeff();
-                let mut coeff = None;
-                for _ in 0..cnt {
-                    n -= 1;
-                    let mut der = vec![E::zero(); n];
-                    for jj in (2..=n).rev() {
-                        der[jj - 1] = E::from(2 * jj).unwrap() * c[jj];
-                        c[jj - 2] =
-                            c[jj - 2] + (E::from(jj).unwrap() * c[jj]) / E::from(jj - 2).unwrap();
-                    }
-
-                    if n > 1 {
-                        der[1] = E::from(4).unwrap() * c[2];
-                    }
-                    der[0] = c[1];
-                    c = der.clone();
-                    coeff = Some(der);
-                }
-
-                Self {
-                    coeff: coeff.unwrap(),
-                    domain: self.domain.clone(),
-                    window: self.window.clone(),
-                }
-            }
-        }
-    }
 
     fn roots(&self) -> Result<Vec<E>> {
         match self.n() {
