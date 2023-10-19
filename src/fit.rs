@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, ops::{Range, MulAssign}};
+use std::ops::Range;
 
 use ndarray::{Array2, ScalarOperand, Array1, ArrayView1, ArrayView2, s, Axis, arr1};
 use ndarray_linalg::{Scalar, Inverse, Lapack, LeastSquaresSvd};
@@ -16,7 +16,34 @@ pub enum ScoringStrategy {
     AIC,
     AICc,
     BIC,
+    ChiSquare,
 }
+
+pub struct PolyConstraint<E> {
+    mu: ChebyshevPolynomial<E>,
+    nu: ChebyshevPolynomial<E>,
+}
+
+
+pub(crate) trait Constraint<E> {
+    fn mu(&self, x: E) -> E;
+    fn nu(&self, x: E) -> E;
+}
+
+impl<E: Scalar<Real = E>> Constraint<E> for PolyConstraint<E> {
+    fn mu(&self, t: E) -> E {
+        let Range { start, end } = self.mu.domain;
+        let x = E::one() / (E::one() + E::one()) * (start + end + (end - start) * t);
+        self.mu.eval(x)
+    }
+
+    fn nu(&self, t: E) -> E {
+        let Range { start, end } = self.mu.domain;
+        let x = E::one() / (E::one() + E::one()) * (start + end + (end - start) * t);
+        self.nu.eval(x)
+    }
+}
+
 
 pub struct Problem<'a, E> {
     pub(crate) t: Array1<E>,
@@ -24,6 +51,7 @@ pub struct Problem<'a, E> {
     pub(crate) uncertainties: Covariance<'a, E>,
     pub(crate) domain: Range<E>,
     pub(crate) strategy: ScoringStrategy,
+    pub(crate) constraint: Option<PolyConstraint<E>>,
 }
 
 pub struct PolyfitResult<E> {
@@ -48,6 +76,7 @@ where
             uncertainties,
             domain: Range { start: x_min, end: x_max },
             strategy,
+            constraint: None,
         }
     }
 
@@ -112,6 +141,7 @@ where
                         / (E::from(self.m()).unwrap() - n - E::one())
             }
             ScoringStrategy::BIC => chi_2_score + (E::from(fit.n()).unwrap() + E::one()) * E::from(self.m()).unwrap().ln(),
+            ScoringStrategy::ChiSquare => chi_2_score,
         }
     }
 
@@ -122,10 +152,15 @@ where
     }
 
     fn fit(&'a self, n: usize) -> Result<ChebyshevFitResult<E>> {
-        let design_matrix = design_matrix(self.t.view(), self.m(), n)?;
+        let design_matrix = design_matrix(self.t.view(), self.m(), n, self.constraint.as_ref())?;
+        let y_tilde: Array1<E> = if let Some(constraint) = self.constraint.as_ref() {
+            self.y.iter().zip(self.t.iter()).map(|(y, t)| *y - constraint.mu(*t)).collect()
+        } else {
+            self.y.to_owned()
+        };
         let result = match self.uncertainties {
             Covariance::None => todo!(),
-            Covariance::Uncertainty { ux, uy } if ux.is_none() => weighted_least_squares(self.y, uy, design_matrix),
+            Covariance::Uncertainty { ux, uy } if ux.is_none() => weighted_least_squares(y_tilde, uy, design_matrix),
             Covariance::Uncertainty { ux, uy } => todo!(),
             Covariance::Covariance { vx, vy } if vx.is_none() => todo!(),
             Covariance::Covariance { vx, vy } => todo!(),
@@ -138,7 +173,7 @@ where
     }
 }
 
-fn design_matrix<'a, E, I>(t: I, m: usize, n: usize) -> Result<Array2<E>>
+fn design_matrix<'a, E, I>(t: I, m: usize, n: usize, constraint: Option<&PolyConstraint<E>>) -> Result<Array2<E>>
 where
     E: Lapack + PartialOrd + Scalar<Real = E> + ScalarOperand,
     I: IntoIterator<Item = &'a E>,
@@ -147,7 +182,12 @@ where
     let rows = t
         .into_iter()
         .flat_map(|t| {
-            poly.underlying_polys(*t)
+            let underlying_poly = poly.underlying_polys(*t);
+            if let Some(constraint) = constraint {
+                underlying_poly.into_iter().zip(std::iter::repeat(constraint.nu(*t)).take(n)).map(|(poly, nu)| poly * nu).collect::<Vec<_>>()
+            } else {
+                underlying_poly
+            }
         })
         .collect::<Vec<_>>();
 
@@ -168,7 +208,7 @@ pub struct ChebyshevFitResult<E> {
 }
 
 fn weighted_least_squares<'a, E: Lapack + Scalar<Real = E> + ScalarOperand>(
-    y: ArrayView1<'a, E>,
+    y: Array1<E>,
     uy: ArrayView1<'a, E>,
     h: Array2<E>,
 ) -> Result<PolyfitResult<E>> {
@@ -233,7 +273,7 @@ mod test {
         let uy = y.iter().map(|y| y / 1000.0).collect::<Vec<_>>();
         let uy = arr1(&uy);
 
-        let h = design_matrix(&x, m, n).unwrap();
+        let h = design_matrix(&x, m, n, None).unwrap();
         let result = weighted_least_squares(y.view(), uy.view(), h).unwrap();
 
         let coeff = result.coeff.to_vec();

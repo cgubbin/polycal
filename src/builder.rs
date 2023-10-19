@@ -11,18 +11,20 @@ struct Set {}
 #[derive(Default)]
 struct Unset {}
 
-struct ProblemBuilder<V, A, UD, UI, DC, IC> {
+
+struct ProblemBuilder<V, A, DU, IU, DC, IC, C> {
     dependent: Option<V>,
     independent: Option<V>,
     dependent_uncertainty: Option<V>,
     independent_uncertainty: Option<V>,
     dependent_covariance: Option<A>,
     independent_covariance: Option<A>,
+    constraint: C,
     strategy: ScoringStrategy,
-    typestate: PhantomData<(UD, UI, DC, IC)>,
+    typestate: PhantomData<(DU, IU, DC, IC)>,
 }
 
-impl<V, A, UD, UI, DC, IC> Default for ProblemBuilder<V, A, UD, UI, DC, IC> {
+impl<V, A, DU, IU, DC, IC> Default for ProblemBuilder<V, A, DU, IU, DC, IC, Unset> {
     fn default() -> Self {
         Self {
             dependent: None,
@@ -31,13 +33,14 @@ impl<V, A, UD, UI, DC, IC> Default for ProblemBuilder<V, A, UD, UI, DC, IC> {
             independent_uncertainty: None,
             dependent_covariance: None,
             independent_covariance: None,
+            constraint: Unset {},
             strategy: ScoringStrategy::AICc,
             typestate: PhantomData
         }
     }
 }
 
-impl<V, A> ProblemBuilder<V, A, Unset, Unset, Unset, Unset> {
+impl<V, A> ProblemBuilder<V, A, Unset, Unset, Unset, Unset, Unset> {
     fn new(independent: V, dependent: V) -> Self {
         Self {
             dependent: Some(dependent),
@@ -47,105 +50,157 @@ impl<V, A> ProblemBuilder<V, A, Unset, Unset, Unset, Unset> {
     }
 }
 
-impl<V, A, UI, UD, CI, CV> ProblemBuilder<V, A, UI, UD, CI, CV> {
+impl<V, A, IU, DU, CI, CV, C> ProblemBuilder<V, A, IU, DU, CI, CV, C> {
     fn with_scoring_strategy(mut self, scoring_strategy: ScoringStrategy) -> Self {
         self.strategy = scoring_strategy;
         self
     }
 }
 
-impl<V, A> ProblemBuilder<V, A, Unset, Unset, Unset, Unset> {
-    fn with_dependent_uncertainty(self, dependent_uncertainty: V) -> ProblemBuilder<V, A, Set, Unset, Unset, Unset> {
-        ProblemBuilder {
-            dependent: self.dependent,
-            independent: self.independent,
-            dependent_uncertainty: Some(dependent_uncertainty),
-            ..Default::default()
-        }
-    }
-}
-
-impl<V, A> ProblemBuilder<V, A, Unset, Set, Unset, Unset> {
-    fn with_dependent_uncertainty(self, dependent_uncertainty: V) -> ProblemBuilder<V, A, Set, Set, Unset, Unset> {
+impl<V, A, C> ProblemBuilder<V, A, Unset, Unset, Unset, Unset, C> {
+    fn with_dependent_uncertainty(self, dependent_uncertainty: V) -> ProblemBuilder<V, A, Set, Unset, Unset, Unset, C> {
         ProblemBuilder {
             dependent: self.dependent,
             independent: self.independent,
             dependent_uncertainty: Some(dependent_uncertainty),
             independent_uncertainty: self.independent_uncertainty,
-            ..Default::default()
+            dependent_covariance: self.dependent_covariance,
+            independent_covariance: self.independent_covariance,
+            strategy: self.strategy,
+            constraint: self.constraint,
+            typestate: PhantomData,
         }
     }
 }
 
-
-impl<V, A> ProblemBuilder<V, A, Unset, Unset, Unset, Unset> {
-    fn with_independent_uncertainty(self, independent_uncertainty: V) -> ProblemBuilder<V, A, Unset, Set, Unset, Unset> {
+impl<V, A, C> ProblemBuilder<V, A, Unset, Set, Unset, Unset, C> {
+    fn with_dependent_uncertainty(self, dependent_uncertainty: V) -> ProblemBuilder<V, A, Set, Set, Unset, Unset, C> {
         ProblemBuilder {
             dependent: self.dependent,
             independent: self.independent,
-            independent_uncertainty: Some(independent_uncertainty),
-            ..Default::default()
+            dependent_uncertainty: Some(dependent_uncertainty),
+            independent_uncertainty: self.independent_uncertainty,
+            dependent_covariance: self.dependent_covariance,
+            independent_covariance: self.independent_covariance,
+            strategy: self.strategy,
+            constraint: self.constraint,
+            typestate: PhantomData,
         }
     }
 }
 
-impl<V, A> ProblemBuilder<V, A, Set, Unset, Unset, Unset> {
-    fn with_independent_uncertainty(self, independent_uncertainty: V) -> ProblemBuilder<V, A, Set, Set, Unset, Unset> {
+
+impl<V, A, C> ProblemBuilder<V, A, Unset, Unset, Unset, Unset, C> {
+    fn with_independent_uncertainty(self, independent_uncertainty: V) -> ProblemBuilder<V, A, Unset, Set, Unset, Unset, C> {
         ProblemBuilder {
             dependent: self.dependent,
             independent: self.independent,
             dependent_uncertainty: self.dependent_uncertainty,
             independent_uncertainty: Some(independent_uncertainty),
-            ..Default::default()
+            dependent_covariance: self.dependent_covariance,
+            independent_covariance: self.independent_covariance,
+            strategy: self.strategy,
+            constraint: self.constraint,
+            typestate: PhantomData,
+        }
+    }
+}
+
+impl<V, A, C> ProblemBuilder<V, A, Set, Unset, Unset, Unset, C> {
+    fn with_independent_uncertainty(self, independent_uncertainty: V) -> ProblemBuilder<V, A, Set, Set, Unset, Unset, C> {
+        ProblemBuilder {
+            dependent: self.dependent,
+            independent: self.independent,
+            dependent_uncertainty: self.dependent_uncertainty,
+            independent_uncertainty: Some(independent_uncertainty),
+            dependent_covariance: self.dependent_covariance,
+            independent_covariance: self.independent_covariance,
+            strategy: self.strategy,
+            constraint: self.constraint,
+            typestate: PhantomData,
         }
     }
 }
 
 
 
-impl<V, A> ProblemBuilder<V, A, Unset, Unset, Unset, Unset> {
-    fn with_dependent_covariance(self, dependent_covariance: A) -> ProblemBuilder<V, A, Unset, Unset, Set, Unset> {
+impl<V, A, C> ProblemBuilder<V, A, Unset, Unset, Unset, Unset, C> {
+    fn with_dependent_covariance(self, dependent_covariance: A) -> ProblemBuilder<V, A, Unset, Unset, Set, Unset, C> {
         ProblemBuilder {
             dependent: self.dependent,
             independent: self.independent,
-            dependent_covariance: Some(dependent_covariance),
-            ..Default::default()
-        }
-    }
-}
-
-impl<V, A> ProblemBuilder<V, A, Unset, Unset, Unset, Set> {
-    fn with_dependent_covariance(self, dependent_covariance: A) -> ProblemBuilder<V, A, Unset, Unset, Set, Set> {
-        ProblemBuilder {
-            dependent: self.dependent,
-            independent: self.independent,
+            dependent_uncertainty: self.dependent_uncertainty,
+            independent_uncertainty: self.independent_uncertainty,
             dependent_covariance: Some(dependent_covariance),
             independent_covariance: self.independent_covariance,
-            ..Default::default()
+            strategy: self.strategy,
+            constraint: self.constraint,
+            typestate: PhantomData,
+        }
+    }
+}
+
+impl<V, A, C> ProblemBuilder<V, A, Unset, Unset, Unset, Set, C> {
+    fn with_dependent_covariance(self, dependent_covariance: A) -> ProblemBuilder<V, A, Unset, Unset, Set, Set, C> {
+        ProblemBuilder {
+            dependent: self.dependent,
+            independent: self.independent,
+            dependent_uncertainty: self.dependent_uncertainty,
+            independent_uncertainty: self.independent_uncertainty,
+            dependent_covariance: Some(dependent_covariance),
+            independent_covariance: self.independent_covariance,
+            strategy: self.strategy,
+            constraint: self.constraint,
+            typestate: PhantomData,
         }
     }
 }
 
 
-impl<V, A> ProblemBuilder<V, A, Unset, Unset, Unset, Unset> {
-    fn with_independent_covariance(self, independent_covariance: A) -> ProblemBuilder<V, A, Unset, Unset, Unset, Set> {
+impl<V, A, C> ProblemBuilder<V, A, Unset, Unset, Unset, Unset, C> {
+    fn with_independent_covariance(self, independent_covariance: A) -> ProblemBuilder<V, A, Unset, Unset, Unset, Set, C> {
         ProblemBuilder {
             dependent: self.dependent,
             independent: self.independent,
-            independent_covariance: Some(independent_covariance),
-            ..Default::default()
-        }
-    }
-}
-
-impl<V, A> ProblemBuilder<V, A, Unset, Unset, Set, Unset> {
-    fn with_independent_covariance(self, independent_covariance: A) -> ProblemBuilder<V, A, Unset, Unset, Set, Set> {
-        ProblemBuilder {
-            dependent: self.dependent,
-            independent: self.independent,
+            dependent_uncertainty: self.dependent_uncertainty,
+            independent_uncertainty: self.independent_uncertainty,
             dependent_covariance: self.dependent_covariance,
             independent_covariance: Some(independent_covariance),
-            ..Default::default()
+            strategy: self.strategy,
+            constraint: self.constraint,
+            typestate: PhantomData
+        }
+    }
+}
+
+impl<V, A, C> ProblemBuilder<V, A, Unset, Unset, Set, Unset, C> {
+    fn with_independent_covariance(self, independent_covariance: A) -> ProblemBuilder<V, A, Unset, Unset, Set, Set, C> {
+        ProblemBuilder {
+            dependent: self.dependent,
+            independent: self.independent,
+            dependent_uncertainty: self.dependent_uncertainty,
+            independent_uncertainty: self.independent_uncertainty,
+            dependent_covariance: self.dependent_covariance,
+            independent_covariance: Some(independent_covariance),
+            strategy: self.strategy,
+            constraint: self.constraint,
+            typestate: PhantomData,
+        }
+    }
+}
+
+impl<V, A, DU, IU, DC, IC> ProblemBuilder<V, A, DU, IU, DC, IC, Unset> {
+    fn with_constraint<C>(self, constraint: C) -> ProblemBuilder<V, A, DU, IU, DC, IC, C> {
+        ProblemBuilder {
+            dependent: self.dependent,
+            independent: self.independent,
+            dependent_uncertainty: self.dependent_uncertainty,
+            independent_uncertainty: self.independent_uncertainty,
+            dependent_covariance: self.dependent_covariance,
+            independent_covariance: self.independent_covariance,
+            strategy: self.strategy,
+            constraint,
+            typestate: PhantomData,
         }
     }
 }
@@ -165,7 +220,7 @@ fn form_rescaled_variables<'a, E: PartialOrd + Scalar>(x: ArrayView1<'a, E>) -> 
 }
 
 
-impl<'a, E: PartialOrd + Scalar> ProblemBuilder<ArrayView1<'a, E>, ArrayView2<'a, E>, Unset, Unset, Unset, Unset> {
+impl<'a, E: PartialOrd + Scalar> ProblemBuilder<ArrayView1<'a, E>, ArrayView2<'a, E>, Unset, Unset, Unset, Unset, Unset> {
     fn build(self) -> Problem<'a, E> {
         let Rescaled { t, domain } = form_rescaled_variables(self.independent.unwrap());
 
@@ -175,11 +230,12 @@ impl<'a, E: PartialOrd + Scalar> ProblemBuilder<ArrayView1<'a, E>, ArrayView2<'a
             uncertainties: Covariance::None,
             domain,
             strategy: self.strategy,
+            constraint: None,
         }
     }
 }
 
-impl<'a, E: PartialOrd + Scalar> ProblemBuilder<ArrayView1<'a, E>, ArrayView2<'a, E>, Unset, Set, Unset, Unset> {
+impl<'a, E: PartialOrd + Scalar> ProblemBuilder<ArrayView1<'a, E>, ArrayView2<'a, E>, Unset, Set, Unset, Unset, Unset> {
     fn build(self) -> Problem<'a, E> {
         let Rescaled { t, domain } = form_rescaled_variables(self.independent.unwrap());
 
@@ -189,11 +245,12 @@ impl<'a, E: PartialOrd + Scalar> ProblemBuilder<ArrayView1<'a, E>, ArrayView2<'a
             uncertainties: Covariance::Uncertainty { ux: None, uy: self.independent_uncertainty.unwrap() },
             domain,
             strategy: self.strategy,
+            constraint: None,
         }
     }
 }
 
-impl<'a, E: PartialOrd + Scalar> ProblemBuilder<ArrayView1<'a, E>, ArrayView2<'a, E>, Set, Set, Unset, Unset> {
+impl<'a, E: PartialOrd + Scalar> ProblemBuilder<ArrayView1<'a, E>, ArrayView2<'a, E>, Set, Set, Unset, Unset, Unset> {
     fn build(self) -> Problem<'a, E> {
         let Rescaled { t, domain } = form_rescaled_variables(self.independent.unwrap());
         Problem {
@@ -202,12 +259,13 @@ impl<'a, E: PartialOrd + Scalar> ProblemBuilder<ArrayView1<'a, E>, ArrayView2<'a
             uncertainties: Covariance::Uncertainty { ux: Some(self.dependent_uncertainty.unwrap()), uy: self.independent_uncertainty.unwrap() },
             domain,
             strategy: self.strategy,
+            constraint: None,
         }
     }
 }
 
 
-impl<'a, E: PartialOrd + Scalar> ProblemBuilder<ArrayView1<'a, E>, ArrayView2<'a, E>, Unset, Unset, Unset, Set> {
+impl<'a, E: PartialOrd + Scalar> ProblemBuilder<ArrayView1<'a, E>, ArrayView2<'a, E>, Unset, Unset, Unset, Set, Unset> {
     fn build(self) -> Problem<'a, E> {
         let Rescaled { t, domain } = form_rescaled_variables(self.independent.unwrap());
         Problem {
@@ -216,11 +274,12 @@ impl<'a, E: PartialOrd + Scalar> ProblemBuilder<ArrayView1<'a, E>, ArrayView2<'a
             uncertainties: Covariance::Covariance { vx: None, vy: self.independent_covariance.unwrap() },
             domain,
             strategy: self.strategy,
+            constraint: None,
         }
     }
 }
 
-impl<'a, E: PartialOrd + Scalar> ProblemBuilder<ArrayView1<'a, E>, ArrayView2<'a, E>, Unset, Unset, Set, Set> {
+impl<'a, E: PartialOrd + Scalar> ProblemBuilder<ArrayView1<'a, E>, ArrayView2<'a, E>, Unset, Unset, Set, Set, Unset> {
     fn build(self) -> Problem<'a, E> {
         let Rescaled { t, domain } = form_rescaled_variables(self.independent.unwrap());
         Problem {
@@ -229,6 +288,7 @@ impl<'a, E: PartialOrd + Scalar> ProblemBuilder<ArrayView1<'a, E>, ArrayView2<'a
             uncertainties: Covariance::Covariance { vx: Some(self.dependent_covariance.unwrap()), vy: self.independent_covariance.unwrap() },
             domain,
             strategy: self.strategy,
+            constraint: None,
         }
     }
 }
