@@ -38,7 +38,7 @@ impl<V, A, UD, UI, DC, IC> Default for ProblemBuilder<V, A, UD, UI, DC, IC> {
 }
 
 impl<V, A> ProblemBuilder<V, A, Unset, Unset, Unset, Unset> {
-    fn new(dependent: V, independent: V) -> Self {
+    fn new(independent: V, dependent: V) -> Self {
         Self {
             dependent: Some(dependent),
             independent: Some(independent),
@@ -165,7 +165,7 @@ fn form_rescaled_variables<'a, E: PartialOrd + Scalar>(x: ArrayView1<'a, E>) -> 
 }
 
 
-impl<'a, E: PartialOrd + Scalar, A> ProblemBuilder<ArrayView1<'a, E>, A, Unset, Unset, Unset, Unset> {
+impl<'a, E: PartialOrd + Scalar> ProblemBuilder<ArrayView1<'a, E>, ArrayView2<'a, E>, Unset, Unset, Unset, Unset> {
     fn build(self) -> Problem<'a, E> {
         let Rescaled { t, domain } = form_rescaled_variables(self.independent.unwrap());
 
@@ -179,9 +179,10 @@ impl<'a, E: PartialOrd + Scalar, A> ProblemBuilder<ArrayView1<'a, E>, A, Unset, 
     }
 }
 
-impl<'a, E: PartialOrd + Scalar, A> ProblemBuilder<ArrayView1<'a, E>, A, Unset, Set, Unset, Unset> {
+impl<'a, E: PartialOrd + Scalar> ProblemBuilder<ArrayView1<'a, E>, ArrayView2<'a, E>, Unset, Set, Unset, Unset> {
     fn build(self) -> Problem<'a, E> {
         let Rescaled { t, domain } = form_rescaled_variables(self.independent.unwrap());
+
         Problem {
             t,
             y: self.dependent.unwrap(),
@@ -192,7 +193,7 @@ impl<'a, E: PartialOrd + Scalar, A> ProblemBuilder<ArrayView1<'a, E>, A, Unset, 
     }
 }
 
-impl<'a, E: PartialOrd + Scalar, A> ProblemBuilder<ArrayView1<'a, E>, A, Set, Set, Unset, Unset> {
+impl<'a, E: PartialOrd + Scalar> ProblemBuilder<ArrayView1<'a, E>, ArrayView2<'a, E>, Set, Set, Unset, Unset> {
     fn build(self) -> Problem<'a, E> {
         let Rescaled { t, domain } = form_rescaled_variables(self.independent.unwrap());
         Problem {
@@ -229,5 +230,84 @@ impl<'a, E: PartialOrd + Scalar> ProblemBuilder<ArrayView1<'a, E>, ArrayView2<'a
             domain,
             strategy: self.strategy,
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use ndarray::Array1;
+    use ndarray_rand::rand::{Rng, SeedableRng};
+    use rand_isaac::Isaac64Rng;
+    use std::ops::Range;
+    use super::ProblemBuilder;
+
+    use crate::ChebyshevPolynomial;
+    use crate::eval::Unsure;
+
+    #[test]
+    fn fit_with_independent_uncertainty_works_in_direct_evaluation() {
+        let state = 40;
+        let mut rng = Isaac64Rng::seed_from_u64(state);
+
+        let order = 5;
+        let domain_max = rng.gen::<f64>().abs();
+        let domain_min = - domain_max;
+
+        let mut coeff = vec![];
+
+        // Find an input which is suitable for use as a calibration function.
+        // A calibration function has to be monotonic.
+        loop {
+            coeff = (0..order).map(|_| rng.gen()).collect::<Vec<f64>>();
+            let polynomial = ChebyshevPolynomial {
+                coeff: coeff.clone(),
+                domain: Range { start: domain_min, end: domain_max },
+                window: Range { start: -1., end: 1. },
+            };
+            if polynomial.is_monotonic().unwrap() {
+                break;
+            }
+        }
+
+        let polynomial = ChebyshevPolynomial {
+            coeff: coeff.clone(),
+            domain: Range { start: domain_min, end: domain_max },
+            window: Range { start: -1., end: 1. },
+        };
+
+
+        let num_calibration_points = rng.gen_range(5000..10000);
+        let x = (0..num_calibration_points)
+            .map(|ii| domain_min + (domain_max - domain_min) * ii as f64 / (num_calibration_points - 1) as f64)
+            .collect::<Array1<_>>();
+
+        let polynomial = ChebyshevPolynomial {
+            coeff: coeff.clone(),
+            domain: Range { start: domain_min, end: domain_max },
+            window: Range { start: -1., end: 1. },
+        };
+
+        let y = x.iter().map(|x| polynomial.eval(*x)).collect::<Array1<_>>();
+
+        let uy = y.iter().map(|y| rng.gen_range(1e-5..1e-3) * y).collect::<Array1<_>>();
+
+        let builder = ProblemBuilder::new(x.view(), y.view())
+            .with_independent_uncertainty(uy.view());
+
+        let problem = builder.build();
+
+        let solution = problem.solve(4 * order).unwrap();
+
+
+        let idx = rng.gen_range(0..num_calibration_points);
+        let x0 = x[idx];
+        let y0 = y[idx];
+
+        let predicted_y = solution.eval_from_stimulus(Unsure { estimate: x0, standard_uncertainty: x0 / 100.0 }).unwrap();
+
+        dbg!(&predicted_y);
+        dbg!((y0 - predicted_y.estimate).abs());
+        assert!((y0 - predicted_y.estimate).abs() < predicted_y.standard_uncertainty);
+
     }
 }

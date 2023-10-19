@@ -55,7 +55,7 @@ where
         self.t.len()
     }
 
-    fn solve(&'a self, n_max: usize) -> Result<ChebyshevFitResult<E>> {
+    pub fn solve(&'a self, n_max: usize) -> Result<ChebyshevFitResult<E>> {
         let mut fits = vec![];
         for n in 1..n_max {
             match self.fit(n) {
@@ -72,6 +72,8 @@ where
             .iter()
             .map(|fit| self.score(&fit.solution))
             .collect::<Vec<_>>();
+
+        dbg!(&scores);
 
 
         // Check the scores vec is not monotonous
@@ -159,6 +161,7 @@ fn outer_product<T: Scalar>(a: &Array1<T>, b: &Array1<T>) -> Result<Array2<T>> {
     Ok(ndarray::linalg::kron(&a, &b))
 }
 
+#[derive(Debug)]
 pub struct ChebyshevFitResult<E> {
     pub(crate) solution: ChebyshevPolynomial<E>,
     pub(crate) covariance: Array2<E>,

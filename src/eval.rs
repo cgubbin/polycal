@@ -6,9 +6,10 @@ use ndarray_linalg::Scalar;
 use crate::Result;
 use crate::fit::ChebyshevFitResult;
 
+#[derive(Debug)]
 pub struct Unsure<E> {
-    estimate: E,
-    standard_uncertainty: E,
+    pub(crate) estimate: E,
+    pub(crate) standard_uncertainty: E,
 }
 
 fn to_scaled<E: Scalar>(x: E, Range { start, end }: &Range<E>) -> E {
@@ -17,7 +18,7 @@ fn to_scaled<E: Scalar>(x: E, Range { start, end }: &Range<E>) -> E {
 
 impl<E: Scalar<Real = E>> ChebyshevFitResult<E> {
     /// Direct evaluation y = p_n(x, a)
-    fn eval_from_stimulus(&self, stimulus: Unsure<E>) -> Result<Unsure<E>> {
+    pub fn eval_from_stimulus(&self, stimulus: Unsure<E>) -> Result<Unsure<E>> {
         let t = to_scaled(stimulus.estimate, &self.solution.domain);
         let estimate = self.solution.eval(t);
         let standard_uncertainty = self.solution.standard_uncertainty_direct(
