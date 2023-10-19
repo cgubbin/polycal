@@ -101,7 +101,6 @@ where
 
     fn score(&'a self, fit: &ChebyshevPolynomial<E>) -> E {
         let chi_2_score = self.chi_2(fit);
-        dbg!(&chi_2_score);
         match self.strategy {
             ScoringStrategy::AIC => chi_2_score + E::from(2 * fit.n()).unwrap(),
             ScoringStrategy::AICc => {
@@ -146,7 +145,7 @@ where
     let rows = t
         .into_iter()
         .flat_map(|t| {
-            poly.eval_as_vec(*t)
+            poly.underlying_polys(*t)
         })
         .collect::<Vec<_>>();
 
@@ -234,7 +233,7 @@ mod test {
         let h = design_matrix(&x, m, n).unwrap();
         let result = weighted_least_squares(y.view(), uy.view(), h).unwrap();
 
-        let coeff = result.solution.to_vec();
+        let coeff = result.coeff.to_vec();
         let cheb = ChebyshevPolynomial {
             coeff,
             window: std::ops::Range { start: -1., end: 1. },
@@ -263,7 +262,6 @@ mod test {
         let coeff = vec![0.6263732815125124, 0.7610862425514004, -0.2, 0.05, 0.045, 0.025];
         let n = coeff.len();
 
-        dbg!(&coeff);
 
         let cheb = ChebyshevPolynomial {
             coeff: coeff.clone(),
@@ -271,7 +269,6 @@ mod test {
             domain: std::ops::Range { start: -1., end: 1. },
         };
 
-        dbg!(cheb.is_monotonic());
 
         let x = (0..m)
             .map(|x| x as f64 / (m -1) as f64)

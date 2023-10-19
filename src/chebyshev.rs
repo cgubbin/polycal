@@ -41,6 +41,7 @@ impl<E: PartialOrd + Scalar<Real = E>> ChebyshevPolynomial<E>
 
 impl<E: Scalar<Real = E>> ChebyshevPolynomial<E>
 {
+    /// Evaluate the sum of the series using Clenshaw recursion
     pub(crate) fn eval(&self, t: E) -> E {
         let (c0, c1) = match self.n() < 3 {
             true => (
@@ -62,33 +63,13 @@ impl<E: Scalar<Real = E>> ChebyshevPolynomial<E>
         c0 + t * c1
     }
 
-    pub(crate) fn eval_u(&self, t: E) -> E {
-        let (c0, c1) = match self.n() < 3 {
-            true => (
-                self.coeff.get(0).copied().unwrap_or(E::zero()),
-                self.coeff.get(1).copied().unwrap_or(E::zero()),
-            ),
-            _ => {
-                let t2 = t + t;
-                let mut c0 = self.coeff[self.n() - 2];
-                let mut c1 = self.coeff[self.n() - 1];
-                for i in 3..(self.n() + 1) {
-                    let tmp = c0;
-                    c0 = self.coeff[self.n() - i] - c1;
-                    c1 = tmp + c1 * t2;
-                }
-                (c0, c1)
-            }
-        };
-        c0 + (t + t) * c1
-    }
-
-    pub(crate) fn eval_as_vec(&self, t: E) -> Vec<E> {
+    /// Returns the vector of underlying Polynomials up to the max-order of `self`.
+    pub(crate) fn underlying_polys(&self, t: E) -> Vec<E> {
         match self.n() {
-            1 => vec![self.coeff[0]],
-            2 => vec![self.coeff[0], self.coeff[1] * t],
+            1 => vec![E::one()],
+            2 => vec![E::one(), t],
             _ => {
-                let mut vals = vec![self.coeff[0], self.coeff[1] * t];
+                let mut vals = vec![E::one(),  t];
                 for ii in 2..self.n() {
                     vals.push((E::one() + E::one()) * t * vals[ii - 1] - vals[ii - 2]);
                 }
@@ -138,42 +119,20 @@ impl<E: Scalar<Real = E>> ChebyshevPolynomial<E>
         }
     }
 
-    /// Evaluate `q`
-    ///
-    /// This is the inverse of the domain, multiplied by the first derivative of the series in the
-    /// scaled coordinate system.
-    ///
-    /// The first derivative of a Chebyshev function of the first-kind is d_t T_n(t) = n
-    /// U_{n-1}(t), so we calculate a vector of Chebyshev function of the second kind (U_n), then
-    /// sum the product multiplied by the coefficients of the series.
     fn evaluate_q(&self, t: E) -> E {
-        let u_vec = match self.n() {
-            1 => vec![E::one()],
-            2 => vec![E::one(), t + t],
-            _ => {
-                let mut vals = vec![E::one(), t + t];
-                for ii in 2..self.n() {
-                    vals.push((E::one() + E::one()) * t * vals[ii - 1] - vals[ii - 2]);
-                }
-                vals
-            }
-        };
-
-        (E::one() + E::one()) / (self.domain.end - self.domain.start)
-            * u_vec.into_iter().zip(&self.coeff).enumerate()
-                .fold(E::zero(), |a, (ii, (un, ai))| a + E::from(ii + 1).unwrap() * un * *ai)
+        (E::one() + E::one()) / (self.domain.end - self.domain.start) * self.deriv(1).eval(t)
 
     }
 
     pub(crate) fn standard_uncertainty_direct(&self, t0: E, ux: E, cov: ArrayView2<'_, E>) -> E {
         let q = self.evaluate_q(t0);
-        let g: Array1<E> = self.eval_as_vec(t0).into();
+        let g: Array1<E> = self.underlying_polys(t0).into();
         (q.powi(2) * ux.powi(2) + g.dot(&cov.dot(&g))).sqrt()
     }
 
     pub(crate) fn standard_uncertainty_inverse(&self, t0: E, uy: E, cov: ArrayView2<'_, E>) -> E {
         let q = self.evaluate_q(t0);
-        let g: Array1<E> = self.eval_as_vec(t0).into();
+        let g: Array1<E> = self.underlying_polys(t0).into();
         E::one() / q.powi(2) * (uy.powi(2) + g.dot(&cov.dot(&g)))
     }
 }
@@ -303,74 +262,137 @@ impl<E: ScalarOperand + AddAssign + Scalar<Real = E> + Lapack + PartialOrd> Cheb
 
         Ok(mat)
     }
-    // fn generate(&self, t: E) -> Self {
-    //     let mut terms = [E::zero(); N];
-    //     terms[0] = E::one();
-    //     terms[1] = t;
-    //
-    //     for ii in 2..N {
-    //         terms[ii] = (E::one() + E::one()) * t * terms[ii - 1] - terms[ii-2];
-    //     }
-    //     Self { terms }
-    // }
 }
 
 #[cfg(test)]
 mod test {
+    use ndarray_rand::rand::{Rng, SeedableRng};
+    use rand_isaac::Isaac64Rng;
     use super::ChebyshevPolynomial;
     use std::ops::Range;
 
     #[test]
     fn chebyshev_of_order_zero_is_evaluated_correctly() {
+        let state = 40;
+        let mut rng = Isaac64Rng::seed_from_u64(state);
+        let domain_max: f64 = rng.gen::<f64>().abs();
         let poly = ChebyshevPolynomial {
             coeff: vec![],
             domain: Range {
-                start: -1.,
-                end: 1.,
+                start: -domain_max,
+                end: domain_max,
             },
             window: Range {
                 start: -1.,
                 end: 1.,
             },
         };
-        let val = poly.eval(1.0);
+        let val = poly.eval(rng.gen());
         assert_eq!(val, 0.0);
     }
 
     #[test]
     fn chebyshev_of_order_one_is_evaluated_correctly() {
+        let state = 40;
+        let mut rng = Isaac64Rng::seed_from_u64(state);
+        let domain_max: f64 = rng.gen::<f64>().abs();
+        let coeff = rng.gen();
         let poly = ChebyshevPolynomial {
-            coeff: vec![1.0],
+            coeff: vec![coeff],
             domain: Range {
-                start: -1.,
-                end: 1.,
+                start: -domain_max,
+                end: domain_max,
             },
             window: Range {
                 start: -1.,
                 end: 1.,
             },
         };
-        let val = poly.eval(1.0);
-        assert_eq!(val, 1.0);
+        let val = poly.eval(rng.gen());
+        assert_eq!(val, coeff);
     }
 
     #[test]
-    fn chebyshev_of_order_three_is_evaluated_correctly() {
+    fn chebyshev_of_order_two_is_evaluated_correctly() {
+        let state = 40;
+        let mut rng = Isaac64Rng::seed_from_u64(state);
+        let domain_max: f64 = rng.gen::<f64>().abs();
+        let order = 2;
+        let coeff: Vec<f64> = (0..order).map(|_| rng.gen()).collect();
+
         let poly = ChebyshevPolynomial {
-            coeff: vec![1.0, 2.0],
+            coeff: coeff.clone(),
             domain: Range {
-                start: -1.,
-                end: 1.,
+                start: -domain_max,
+                end: domain_max,
             },
             window: Range {
                 start: -1.,
                 end: 1.,
             },
         };
-        let val = poly.eval(3.0);
-        assert_eq!(val, 7.0);
+        let t0 = rng.gen();
+        let actual = poly.eval(t0);
+
+        let expected = coeff[0] + t0 * coeff[1];
+        assert_eq!(expected, actual);
     }
 
+
+    #[test]
+    fn chebyshev_of_order_three_is_evaluated_correctly() {
+        let state = 40;
+        let mut rng = Isaac64Rng::seed_from_u64(state);
+        let domain_max: f64 = rng.gen::<f64>().abs();
+        let order = 3;
+        let coeff: Vec<f64> = (0..order).map(|_| rng.gen()).collect();
+
+        let poly = ChebyshevPolynomial {
+            coeff: coeff.clone(),
+            domain: Range {
+                start: -domain_max,
+                end: domain_max,
+            },
+            window: Range {
+                start: -1.,
+                end: 1.,
+            },
+        };
+        let t0 = rng.gen();
+        let actual = poly.eval(t0);
+
+        let expected = coeff[0] + t0 * coeff[1] + coeff[2] * (2. * t0.powi(2) - 1.);
+        assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn vec_evaluation_sum_matches_scalar_eval() {
+        let state = 40;
+        let mut rng = Isaac64Rng::seed_from_u64(state);
+        let domain_max: f64 = rng.gen::<f64>().abs();
+        let order = rng.gen::<i8>() as usize;
+        let coeff: Vec<f64> = (0..order).map(|_| rng.gen()).collect();
+
+        let poly = ChebyshevPolynomial {
+            coeff: coeff.clone(),
+            domain: Range {
+                start: -domain_max,
+                end: domain_max,
+            },
+            window: Range {
+                start: -1.,
+                end: 1.,
+            },
+        };
+
+        let t0 = rng.gen();
+        let scalar = poly.eval(t0);
+        let vector = poly.underlying_polys(t0).into_iter()
+            .zip(coeff)
+            .fold(0., |a, (t, c)| a + t * c);
+
+        approx::assert_relative_eq!(scalar, vector, max_relative=1e-10);
+    }
 
 
 
