@@ -7,13 +7,14 @@ use argmin::{
     },
     solver::{linesearch::MoreThuenteLineSearch, newton::NewtonCG},
 };
-use ndarray::{arr1, s, Array1, Array2, ArrayView2, ScalarOperand};
+use ndarray::{arr1, s, Array1, Array2, ArrayView2, ScalarOperand, ArrayView1};
 use ndarray_linalg::{EigVals, Lapack, Scalar};
 
 use crate::Result;
+use crate::fit::PolyConstraint;
 
 #[derive(Clone, Debug)]
-pub(crate) struct ChebyshevPolynomial<E> {
+pub struct ChebyshevPolynomial<E> {
     pub(crate) coeff: Vec<E>,
     pub(crate) domain: Range<E>,
     pub(crate) window: Range<E>,
@@ -52,14 +53,14 @@ impl<E: Scalar<Real = E>> ChebyshevPolynomial<E> {
     pub(crate) fn eval(&self, t: E) -> E {
         let (c0, c1) = match self.n() < 3 {
             true => (
-                self.coeff.get(0).copied().unwrap_or(E::zero()),
-                self.coeff.get(1).copied().unwrap_or(E::zero()),
+                self.coeff.get(0).copied().unwrap_or_else(E::zero),
+                self.coeff.get(1).copied().unwrap_or_else(E::zero),
             ),
             _ => {
                 let t2 = t + t;
                 let mut c0 = self.coeff[self.n() - 2];
                 let mut c1 = self.coeff[self.n() - 1];
-                for i in 3..(self.n() + 1) {
+                for i in 3..=self.n() {
                     let tmp = c0;
                     c0 = self.coeff[self.n() - i] - c1;
                     c1 = tmp + c1 * t2;
@@ -68,6 +69,10 @@ impl<E: Scalar<Real = E>> ChebyshevPolynomial<E> {
             }
         };
         c0 + t * c1
+    }
+
+    pub(crate) fn eval_with_constraint(&self, t: E, nu: &Self) -> E {
+        self.eval(t) * nu.eval(t)
     }
 
     /// Returns the vector of underlying Polynomials up to the max-order of `self`.
@@ -85,10 +90,19 @@ impl<E: Scalar<Real = E>> ChebyshevPolynomial<E> {
         }
     }
 
+    /// Returns the vector of underlying Polynomials up to the max-order of `self` multiplied by a
+    /// constraint `\nu`
+    pub(crate) fn underlying_polys_with_constraint(&self, t: E, nu: &Self) -> Vec<E> {
+        let mut polys = self.underlying_polys(t);
+        polys.iter_mut()
+            .for_each(|poly| *poly *= nu.eval(t));
+        polys
+    }
+
     /// Compute the derivative of order `cnt` of the Chebyshev Polynomial
     ///
     /// ```
-    fn deriv(&self, cnt: usize) -> ChebyshevPolynomial<E> {
+    pub(crate) fn deriv(&self, cnt: usize) -> Self {
         match cnt {
             0 => self.clone(),
             cnt if cnt >= self.n() => Self {
@@ -184,6 +198,57 @@ impl<'a, E: ArgminFloat + Scalar<Real = E>> Hessian for InverseProblem<'a, E> {
     }
 }
 
+struct ConstrainedInverseProblem<'a, E> {
+    problem: &'a ChebyshevPolynomial<E>,
+    constraint: &'a PolyConstraint<E>,
+    y0: E,
+}
+
+impl<'a, E: ArgminFloat + Scalar<Real = E>> CostFunction for ConstrainedInverseProblem<'a, E> {
+    type Param = E;
+    type Output = E;
+
+    fn cost(
+        &self,
+        param: &Self::Param,
+    ) -> ::std::result::Result<Self::Output, argmin::core::Error> {
+        Ok(Scalar::abs(self.problem.eval(*param) * self.constraint.nu.eval(*param) + self.constraint.mu.eval(*param) - self.y0))
+    }
+}
+
+impl<'a, E: ArgminFloat + Scalar<Real = E>> Gradient for ConstrainedInverseProblem<'a, E> {
+    type Param = E;
+    type Gradient = E;
+
+    fn gradient(
+        &self,
+        param: &Self::Param,
+    ) -> ::std::result::Result<Self::Gradient, argmin::core::Error> {
+        Ok(
+            self.problem.deriv(1).eval(*param) * self.constraint.nu.eval(*param)
+                + self.problem.eval(*param) * self.constraint.nu.deriv(1).eval(*param)
+                + self.constraint.mu.deriv(1).eval(*param)
+        )
+    }
+}
+
+impl<'a, E: ArgminFloat + Scalar<Real = E>> Hessian for ConstrainedInverseProblem<'a, E> {
+    type Param = E;
+    type Hessian = E;
+
+    fn hessian(
+        &self,
+        param: &Self::Param,
+    ) -> ::std::result::Result<Self::Hessian, argmin::core::Error> {
+        Ok(
+            self.problem.deriv(2).eval(*param) * self.constraint.nu.eval(*param)
+                + self.problem.eval(*param) * self.constraint.nu.deriv(2).eval(*param)
+                + (E::one() + E::one()) * self.problem.deriv(1).eval(*param) * self.constraint.nu.deriv(1).eval(*param)
+                + self.constraint.mu.deriv(2).eval(*param)
+        )
+    }
+}
+
 impl<E> ChebyshevPolynomial<E>
 where
     E: ArgminFloat
@@ -196,8 +261,31 @@ where
         + argmin_math::ArgminL2Norm<E>
         + argmin_math::ArgminDot<E, E>,
 {
+    // y - mu(x) - nu(x) p_n(x)
+    pub(crate) fn inverse_eval_with_constraint(&self, y0: E, constraint: &PolyConstraint<E>) -> Result<E> {
+        let cost = ConstrainedInverseProblem { problem: self, y0, constraint };
+        let init_param = E::zero();
+
+        // set up line search
+        let linesearch = MoreThuenteLineSearch::new();
+
+        // Set up solver
+        let solver = NewtonCG::new(linesearch);
+
+        // Run solver
+        let res = Executor::new(cost, solver)
+            .configure(|state| state.param(init_param).max_iters(100))
+            .add_observer(SlogLogger::term(), ObserverMode::Always)
+            .run()?;
+
+        let mut state = res.state().clone();
+        let param = state.take_param();
+
+        Ok(param.unwrap())
+    }
+
     pub(crate) fn inverse_eval(&self, y0: E) -> Result<E> {
-        let cost = InverseProblem { problem: &self, y0 };
+        let cost = InverseProblem { problem: self, y0 };
         let init_param = E::zero();
 
         // set up line search
@@ -220,6 +308,18 @@ where
 }
 
 impl<E: ScalarOperand + AddAssign + Scalar<Real = E> + Lapack + PartialOrd> ChebyshevPolynomial<E> {
+    pub(crate) fn is_monotonic_with_constraint(&self, nu: &Self) -> Result<bool> {
+        let poly = self.clone() * nu.clone();
+        dbg!(&poly, &self, &nu);
+        let deriv = poly.deriv(1);
+        let roots = deriv.roots()?;
+        dbg!(&roots);
+
+        Ok(roots
+            .into_iter()
+            .all(|root| (root < -E::one()) || (root > E::one())))
+    }
+
     pub(crate) fn is_monotonic(&self) -> Result<bool> {
         let deriv = self.deriv(1);
         let roots = deriv.roots()?;
@@ -232,7 +332,7 @@ impl<E: ScalarOperand + AddAssign + Scalar<Real = E> + Lapack + PartialOrd> Cheb
     fn roots(&self) -> Result<Vec<E>> {
         match self.n() {
             n if n < 2 => Ok(vec![]),
-            n if n == 2 => Ok(vec![-self.coeff[0] / self.coeff[1]]),
+            2 => Ok(vec![-self.coeff[0] / self.coeff[1]]),
             _ => {
                 let m = self.companion_matrix()?;
                 let mut r = m
@@ -289,7 +389,7 @@ impl<E: ScalarOperand + AddAssign + Scalar<Real = E> + Lapack + PartialOrd> Cheb
 
 #[cfg(test)]
 mod test {
-    use super::ChebyshevPolynomial;
+    use super::{ChebyshevPolynomial, PolyConstraint};
     use ndarray_rand::rand::{Rng, SeedableRng};
     use rand_isaac::Isaac64Rng;
     use std::ops::Range;
@@ -531,5 +631,54 @@ mod test {
         approx::assert_relative_eq!(-0.5, roots[0], max_relative = 1e-5);
         approx::assert_relative_eq!(0.0, roots[1], max_relative = 1e-5);
         approx::assert_relative_eq!(1.0, roots[2], max_relative = 1e-5);
+    }
+
+    #[test]
+    fn constrained_polynomials_respect_constraints() {
+        let state = 40;
+        let mut rng = Isaac64Rng::seed_from_u64(state);
+        let poly = ChebyshevPolynomial {
+            coeff: vec![-1., 1., -1., 1.],
+            domain: Range {
+                start: -1.,
+                end: 1.,
+            },
+            window: Range {
+                start: -1.,
+                end: 1.,
+            },
+        };
+        let constraint = PolyConstraint {
+            nu: ChebyshevPolynomial {
+                coeff: vec![-1., 1., -1., 1.],
+                domain: Range {
+                    start: -1.,
+                    end: 1.,
+                },
+                window: Range {
+                    start: -1.,
+                    end: 1.,
+                },
+            },
+            mu: ChebyshevPolynomial {
+                coeff: vec![0.],
+                domain: Range {
+                    start: -1.,
+                    end: 1.,
+                },
+                window: Range {
+                    start: -1.,
+                    end: 1.,
+                },
+            },
+        };
+
+        let t = rng.gen_range(-1.0..1.0);
+        let val = poly.eval_with_constraint(t, &constraint.nu);
+
+        let zero_val = poly.eval_with_constraint(0.0, &constraint.nu);
+
+        approx::assert_relative_eq!(zero_val, 0.0);
+        approx::assert_relative_eq!(val, poly.eval(t) * constraint.nu.eval(t));
     }
 }

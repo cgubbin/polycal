@@ -6,6 +6,7 @@ mod builder;
 mod chebyshev;
 mod eval;
 mod fit;
+mod series;
 
 pub type Result<T> = ::std::result::Result<T, Box<dyn ::std::error::Error>>;
 

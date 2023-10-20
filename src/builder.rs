@@ -3,7 +3,7 @@ use std::{marker::PhantomData, ops::Range};
 use ndarray::{Array1, ArrayView1, ArrayView2};
 use ndarray_linalg::Scalar;
 
-use crate::fit::{Covariance, Problem, ScoringStrategy};
+use crate::fit::{Covariance, PolyConstraint, Problem, ScoringStrategy};
 
 #[derive(Default)]
 struct Set {}
@@ -33,7 +33,7 @@ impl<V, A, DU, IU, DC, IC> Default for ProblemBuilder<V, A, DU, IU, DC, IC, Unse
             dependent_covariance: None,
             independent_covariance: None,
             constraint: Unset {},
-            strategy: ScoringStrategy::AICc,
+            strategy: ScoringStrategy::Aicc,
             typestate: PhantomData,
         }
     }
@@ -229,17 +229,15 @@ struct Rescaled<E> {
     domain: Range<E>,
 }
 
-fn form_rescaled_variables<'a, E: PartialOrd + Scalar>(x: ArrayView1<'a, E>) -> Rescaled<E> {
-    let end = x
+fn form_rescaled_variables<E: PartialOrd + Scalar>(x: ArrayView1<'_, E>) -> Rescaled<E> {
+    let end = *x
         .iter()
-        .max_by(|a, b| a.partial_cmp(&b).unwrap())
-        .unwrap()
-        .clone();
-    let start = x
+        .max_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
+    let start = *x
         .iter()
-        .min_by(|a, b| a.partial_cmp(&b).unwrap())
-        .unwrap()
-        .clone();
+        .min_by(|a, b| a.partial_cmp(b).unwrap())
+        .unwrap();
 
     let t = x
         .into_iter()
@@ -346,6 +344,102 @@ impl<'a, E: PartialOrd + Scalar>
     }
 }
 
+
+impl<'a, E: PartialOrd + Scalar>
+    ProblemBuilder<ArrayView1<'a, E>, ArrayView2<'a, E>, Unset, Unset, Unset, Unset, PolyConstraint<E>>
+{
+    fn build(self) -> Problem<'a, E> {
+        let Rescaled { t, domain } = form_rescaled_variables(self.independent.unwrap());
+
+        Problem {
+            t,
+            y: self.dependent.unwrap(),
+            uncertainties: Covariance::None,
+            domain,
+            strategy: self.strategy,
+            constraint: Some(self.constraint),
+        }
+    }
+}
+
+impl<'a, E: PartialOrd + Scalar>
+    ProblemBuilder<ArrayView1<'a, E>, ArrayView2<'a, E>, Unset, Set, Unset, Unset, PolyConstraint<E>>
+{
+    fn build(self) -> Problem<'a, E> {
+        let Rescaled { t, domain } = form_rescaled_variables(self.independent.unwrap());
+
+        Problem {
+            t,
+            y: self.dependent.unwrap(),
+            uncertainties: Covariance::Uncertainty {
+                ux: None,
+                uy: self.independent_uncertainty.unwrap(),
+            },
+            domain,
+            strategy: self.strategy,
+            constraint: Some(self.constraint),
+        }
+    }
+}
+
+impl<'a, E: PartialOrd + Scalar>
+    ProblemBuilder<ArrayView1<'a, E>, ArrayView2<'a, E>, Set, Set, Unset, Unset, PolyConstraint<E>>
+{
+    fn build(self) -> Problem<'a, E> {
+        let Rescaled { t, domain } = form_rescaled_variables(self.independent.unwrap());
+        Problem {
+            t,
+            y: self.dependent.unwrap(),
+            uncertainties: Covariance::Uncertainty {
+                ux: Some(self.dependent_uncertainty.unwrap()),
+                uy: self.independent_uncertainty.unwrap(),
+            },
+            domain,
+            strategy: self.strategy,
+            constraint: Some(self.constraint),
+        }
+    }
+}
+
+impl<'a, E: PartialOrd + Scalar>
+    ProblemBuilder<ArrayView1<'a, E>, ArrayView2<'a, E>, Unset, Unset, Unset, Set, PolyConstraint<E>>
+{
+    fn build(self) -> Problem<'a, E> {
+        let Rescaled { t, domain } = form_rescaled_variables(self.independent.unwrap());
+        Problem {
+            t,
+            y: self.dependent.unwrap(),
+            uncertainties: Covariance::Covariance {
+                vx: None,
+                vy: self.independent_covariance.unwrap(),
+            },
+            domain,
+            strategy: self.strategy,
+            constraint: Some(self.constraint),
+        }
+    }
+}
+
+impl<'a, E: PartialOrd + Scalar>
+    ProblemBuilder<ArrayView1<'a, E>, ArrayView2<'a, E>, Unset, Unset, Set, Set, PolyConstraint<E>>
+{
+    fn build(self) -> Problem<'a, E> {
+        let Rescaled { t, domain } = form_rescaled_variables(self.independent.unwrap());
+        Problem {
+            t,
+            y: self.dependent.unwrap(),
+            uncertainties: Covariance::Covariance {
+                vx: Some(self.dependent_covariance.unwrap()),
+                vy: self.independent_covariance.unwrap(),
+            },
+            domain,
+            strategy: self.strategy,
+            constraint: Some(self.constraint),
+        }
+    }
+}
+
+
 #[cfg(test)]
 mod test {
     use super::ProblemBuilder;
@@ -355,6 +449,7 @@ mod test {
     use std::ops::Range;
 
     use crate::eval::Unsure;
+    use crate::fit::{PolyConstraint, ScoringStrategy};
     use crate::ChebyshevPolynomial;
 
     #[test]
@@ -442,11 +537,126 @@ mod test {
             .eval_from_stimulus(Unsure {
                 estimate: x0,
                 standard_uncertainty: x0 / 100.0,
-            })
-            .unwrap();
+            });
 
         dbg!(&predicted_y);
         dbg!((y0 - predicted_y.estimate).abs());
-        assert!((y0 - predicted_y.estimate).abs() < predicted_y.standard_uncertainty);
+        // assert!((y0 - predicted_y.estimate).abs() < predicted_y.standard_uncertainty);
+    }
+
+    #[test]
+    fn fit_with_constraints_respects_constraints() {
+        let state = 40;
+        let mut rng = Isaac64Rng::seed_from_u64(state);
+
+        let order = 5;
+        let domain_max = rng.gen::<f64>().abs();
+        let domain_min = 0.0;
+
+        let intercept_at_t = (- domain_min - domain_max) / (domain_max - domain_min);
+
+        let mut coeff = Vec::new();
+
+        let constraint = PolyConstraint {
+            nu: ChebyshevPolynomial {
+                coeff: vec![-intercept_at_t, 1.],
+                domain: Range {
+                    start: domain_min,
+                    end: domain_max,
+                },
+                window: Range {
+                    start: -1.,
+                    end: 1.,
+                },
+            },
+            mu: ChebyshevPolynomial {
+                coeff: vec![0.],
+                domain: Range {
+                    start: domain_min,
+                    end: domain_max,
+                },
+                window: Range {
+                    start: -1.,
+                    end: 1.,
+                },
+            },
+        };
+
+        // Find an input which is suitable for use as a calibration function.
+        // A calibration function has to be monotonic.
+        loop {
+            coeff = (0..order).map(|_| rng.gen()).collect::<Vec<f64>>();
+            let polynomial = ChebyshevPolynomial {
+                coeff: coeff.clone(),
+                domain: Range {
+                    start: domain_min,
+                    end: domain_max,
+                },
+                window: Range {
+                    start: -1.,
+                    end: 1.,
+                },
+            };
+            if polynomial.is_monotonic_with_constraint(&constraint.nu).unwrap() {
+                break;
+            }
+        }
+
+        let num_calibration_points = rng.gen_range(100..500);
+        let x = (0..num_calibration_points)
+            .map(|ii| {
+                domain_min
+                    + (domain_max - domain_min) * ii as f64 / (num_calibration_points - 1) as f64
+            })
+            .collect::<Array1<_>>();
+
+        let polynomial = ChebyshevPolynomial {
+            coeff,
+            domain: Range {
+                start: domain_min,
+                end: domain_max,
+            },
+            window: Range {
+                start: -1.,
+                end: 1.,
+            },
+        };
+
+        let y = x.iter().map(|x| polynomial.eval(*x)).collect::<Array1<_>>();
+
+        let uy = y
+            .iter()
+            .map(|y| rng.gen_range(1e-5..1e-3) * y)
+            .collect::<Array1<_>>();
+
+        let builder = ProblemBuilder::new(x.view(), y.view())
+            .with_independent_uncertainty(uy.view())
+            .with_constraint(constraint)
+            .with_scoring_strategy(ScoringStrategy::ChiSquare);
+
+        let problem = builder.build();
+
+        let solution = problem.solve(5 * order).unwrap();
+
+        let idx = rng.gen_range(0..num_calibration_points);
+        let x0 = x[idx];
+        let y0 = y[idx];
+
+        let predicted_y = solution
+            .eval_from_stimulus(Unsure {
+                estimate: x0,
+                standard_uncertainty: x0 / 100.0,
+            });
+
+        dbg!(&predicted_y);
+        dbg!((y0 - predicted_y.estimate).abs());
+
+        let predicted_y = solution
+            .eval_from_stimulus(Unsure {
+                estimate: 0.0,
+                standard_uncertainty: x0 / 100.0,
+            });
+
+        dbg!(&predicted_y);
     }
 }

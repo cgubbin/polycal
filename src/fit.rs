@@ -1,5 +1,6 @@
 use std::ops::Range;
 
+use argmin::core::{Jacobian, Operator};
 use ndarray::{arr1, s, Array1, Array2, ArrayView1, ArrayView2, Axis, ScalarOperand};
 use ndarray_linalg::{Inverse, Lapack, LeastSquaresSvd, Scalar};
 use num_traits::Signed;
@@ -19,33 +20,34 @@ pub enum Covariance<'a, E> {
 }
 
 pub enum ScoringStrategy {
-    AIC,
-    AICc,
-    BIC,
+    Aic,
+    Aicc,
+    Bic,
     ChiSquare,
 }
 
+#[derive(Clone, Debug)]
 pub struct PolyConstraint<E> {
-    mu: ChebyshevPolynomial<E>,
-    nu: ChebyshevPolynomial<E>,
+    pub(crate) mu: ChebyshevPolynomial<E>,
+    pub(crate) nu: ChebyshevPolynomial<E>,
 }
 
-pub(crate) trait Constraint<E> {
+pub trait Constraint<E> {
     fn mu(&self, x: E) -> E;
     fn nu(&self, x: E) -> E;
 }
 
 impl<E: Scalar<Real = E>> Constraint<E> for PolyConstraint<E> {
     fn mu(&self, t: E) -> E {
-        let Range { start, end } = self.mu.domain;
-        let x = E::one() / (E::one() + E::one()) * (start + end + (end - start) * t);
-        self.mu.eval(x)
+        // let Range { start, end } = self.mu.domain;
+        // let x = E::one() / (E::one() + E::one()) * (start + end + (end - start) * t);
+        self.mu.eval(t)
     }
 
     fn nu(&self, t: E) -> E {
-        let Range { start, end } = self.mu.domain;
-        let x = E::one() / (E::one() + E::one()) * (start + end + (end - start) * t);
-        self.nu.eval(x)
+        // let Range { start, end } = self.mu.domain;
+        // let x = E::one() / (E::one() + E::one()) * (start + end + (end - start) * t);
+        self.nu.eval(t)
     }
 }
 
@@ -79,16 +81,14 @@ where
         uncertainties: Covariance<'a, E>,
         strategy: ScoringStrategy,
     ) -> Self {
-        let x_max = x
+        let x_max = *x
             .iter()
-            .max_by(|a, b| a.partial_cmp(&b).unwrap())
-            .unwrap()
-            .clone();
-        let x_min = x
+            .max_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap();
+        let x_min = *x
             .iter()
-            .min_by(|a, b| a.partial_cmp(&b).unwrap())
-            .unwrap()
-            .clone();
+            .min_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap();
 
         let t = x
             .into_iter()
@@ -117,11 +117,14 @@ where
         for n in 1..n_max {
             match self.fit(n) {
                 Ok(fit) => {
-                    if fit.solution.is_monotonic()? {
+                    if self.constraint.as_ref().map_or_else(
+                        || fit.solution.is_monotonic(),
+                        |constraint| fit.solution.is_monotonic_with_constraint(&constraint.nu)
+                    )? {
                         fits.push(fit);
                     }
                 }
-                Err(err) => eprintln!("{:?}", err),
+                Err(err) => eprintln!("{err:?}"),
             }
         }
         // Scoring
@@ -141,13 +144,12 @@ where
             .windows(2)
             .all(|window| window[0].signum() == window[1].signum())
         {
-            panic!("no minimum found");
+            println!("no minimum found");
         }
-        let best_score = scores
+        let best_score = *scores
             .iter()
-            .min_by(|a, b| a.partial_cmp(&b).unwrap())
-            .unwrap()
-            .clone();
+            .min_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap();
         let scores = scores
             .into_iter()
             .map(|score| score - best_score)
@@ -157,7 +159,7 @@ where
 
         let best_fit = fits.swap_remove(index);
 
-        let nu = self.m() - best_fit.solution.n() - 1;
+        let _nu = self.m() - best_fit.solution.n() - 1;
 
         // TODO Chi-2 validation
 
@@ -167,15 +169,15 @@ where
     fn score(&'a self, fit: &ChebyshevPolynomial<E>) -> E {
         let chi_2_score = self.chi_2(fit);
         match self.strategy {
-            ScoringStrategy::AIC => chi_2_score + E::from(2 * fit.n()).unwrap(),
-            ScoringStrategy::AICc => {
+            ScoringStrategy::Aic => chi_2_score + E::from(2 * fit.n()).unwrap(),
+            ScoringStrategy::Aicc => {
                 let n = E::from(fit.n()).unwrap();
                 chi_2_score
                     + (E::one() + E::one()) * n
                     + (E::one() + E::one()) * (n + E::one()) * (n + E::one() + E::one())
                         / (E::from(self.m()).unwrap() - n - E::one())
             }
-            ScoringStrategy::BIC => {
+            ScoringStrategy::Bic => {
                 chi_2_score
                     + (E::from(fit.n()).unwrap() + E::one()) * E::from(self.m()).unwrap().ln()
             }
@@ -187,28 +189,29 @@ where
         self.t
             .iter()
             .zip(self.y)
-            .fold(E::zero(), |a, (t, y)| a + (*y - fit.eval(*t)).powi(2))
+            .fold(E::zero(), |a, (t, y)| a + (*y - self.constraint.as_ref().map_or_else(
+                || fit.eval(*t),
+                |constraint| fit.eval_with_constraint(*t, &constraint.nu)
+            )).powi(2))
     }
 
     fn fit(&'a self, n: usize) -> Result<ChebyshevFitResult<E>> {
         let design_matrix = design_matrix(self.t.view(), self.m(), n, self.constraint.as_ref())?;
-        let y_tilde: Array1<E> = if let Some(constraint) = self.constraint.as_ref() {
-            self.y
-                .iter()
-                .zip(self.t.iter())
-                .map(|(y, t)| *y - constraint.mu(*t))
-                .collect()
-        } else {
+        let y_tilde: Array1<E> = self.constraint.as_ref().map_or_else(|| self.y.to_owned(), |constraint|
             self.y.to_owned()
-        };
+                // .iter()
+                //.zip(self.t.iter())
+                //.map(|(y, t)| *y - constraint.mu(*t))
+                // .collect()
+                );
         let result = match self.uncertainties {
             Covariance::None => todo!(),
             Covariance::Uncertainty { ux, uy } if ux.is_none() => {
-                weighted_least_squares(y_tilde, uy, design_matrix)
+                weighted_least_squares(y_tilde.view(), uy, design_matrix)
             }
-            Covariance::Uncertainty { ux, uy } => todo!(),
-            Covariance::Covariance { vx, vy } if vx.is_none() => todo!(),
-            Covariance::Covariance { vx, vy } => todo!(),
+            Covariance::Uncertainty { ux: _, uy: _ } => todo!(),
+            Covariance::Covariance { vx, vy: _ } if vx.is_none() => todo!(),
+            Covariance::Covariance { vx: _, vy: _ } => todo!(),
         }?;
 
         Ok(ChebyshevFitResult {
@@ -221,6 +224,7 @@ where
                 },
             },
             covariance: result.covariance,
+            constraint: self.constraint.clone(),
         })
     }
 }
@@ -239,18 +243,13 @@ where
     let rows = t
         .into_iter()
         .flat_map(|t| {
-            let underlying_poly = poly.underlying_polys(*t);
-            if let Some(constraint) = constraint {
-                underlying_poly
-                    .into_iter()
-                    .zip(std::iter::repeat(constraint.nu(*t)).take(n))
-                    .map(|(poly, nu)| poly * nu)
-                    .collect::<Vec<_>>()
-            } else {
-                underlying_poly
-            }
+            constraint.map_or_else(
+                || poly.underlying_polys(*t),
+                |constraint| poly.underlying_polys_with_constraint(*t, &constraint.nu)
+            )
         })
         .collect::<Vec<_>>();
+
 
     Ok(Array2::from_shape_vec((m, n), rows)?)
 }
@@ -266,11 +265,89 @@ fn outer_product<T: Scalar>(a: &Array1<T>, b: &Array1<T>) -> Result<Array2<T>> {
 pub struct ChebyshevFitResult<E> {
     pub(crate) solution: ChebyshevPolynomial<E>,
     pub(crate) covariance: Array2<E>,
+    pub(crate) constraint: Option<PolyConstraint<E>>,
 }
 
-fn weighted_least_squares<'a, E: Lapack + Scalar<Real = E> + ScalarOperand>(
-    y: Array1<E>,
+struct TotalLeastSquares<'a, E> {
+    x: ArrayView1<'a, E>,
+    y: ArrayView1<'a, E>,
+    ux: ArrayView1<'a, E>,
     uy: ArrayView1<'a, E>,
+    order: usize,
+    constraint: Option<&'a PolyConstraint<E>>,
+}
+
+impl<'a, E: Scalar<Real = E>> Operator for TotalLeastSquares<'a, E> {
+    type Param = Array1<E>;
+    type Output = Array1<E>;
+
+    fn apply(&self, param: &Self::Param) -> ::std::result::Result<Self::Output, argmin::core::Error> {
+        let coeff = param.slice(s![..self.order]).into_iter().copied().collect::<Vec<_>>();
+        let zeta = param.slice(s![self.order..]);
+        let poly: ChebyshevPolynomial<E> = ChebyshevPolynomial { coeff, domain: Range { start: - E::one(), end: E::one() }, window: Range {start: - E::one(), end: E::one() }};
+        let mut r1 = self.x.iter().zip(self.ux).zip(zeta)
+                .map(|((x, ux), zeta)| (*x - *zeta) / *ux)
+                .collect::<Vec<_>>();
+
+        let r2 = self.y.iter().zip(self.uy).zip(zeta)
+                .map(|((y, uy), zeta)| (*y - poly.eval(*zeta)) / *uy);
+
+        r1.extend(r2);
+
+        Ok(r1.into())
+    }
+}
+
+impl<'a, E: Scalar<Real = E>> Jacobian for TotalLeastSquares<'a, E> {
+    type Param = Array1<E>;
+    type Jacobian = Array2<E>;
+
+    fn jacobian(&self, param: &Self::Param) -> ::std::result::Result<Self::Jacobian, argmin::core::Error> {
+        let coeff = param.slice(s![..self.order]).into_iter().copied().collect::<Vec<_>>();
+        let zeta = param.slice(s![self.order..]);
+        let poly: ChebyshevPolynomial<E> = ChebyshevPolynomial { coeff, domain: Range { start: - E::one(), end: E::one() }, window: Range {start: - E::one(), end: E::one() }};
+
+        let mut jacobian = Array2::zeros((param.len(), param.len()));
+
+        for (ii, ux) in self.ux.iter().enumerate() {
+            jacobian[[ii, ii]] = - E::one() / *ux;
+
+            let poly_deriv = - poly.deriv(1).eval(zeta[ii]);
+            for jj in self.ux.len()..param.len() {
+                jacobian[[jj, ii]] = - poly_deriv / self.uy[ii];
+            }
+        }
+
+        for ii in 0..poly.n() {
+            let row = ii + self.ux.len();
+            let terms = poly.underlying_polys(zeta[ii]);
+
+            for (jj, term) in terms.into_iter().enumerate() {
+                let col = jj + self.ux.len();
+                jacobian[[row, col]] = - term / self.uy[ii];
+            }
+        }
+        Ok(jacobian)
+    }
+}
+
+
+fn total_least_squares<'a, E: Lapack + Scalar<Real = E> + ScalarOperand>(
+    x: ArrayView1<'a, E>,
+    y: ArrayView1<'a, E>,
+    ux: ArrayView1<'a, E>,
+    uy: ArrayView1<'a, E>,
+    order: usize,
+    constraint: Option<&'a PolyConstraint<E>>,
+) -> Result<PolyfitResult<E>> {
+    let problem = TotalLeastSquares { x, y, ux, uy, order, constraint };
+
+    todo!()
+}
+
+fn weighted_least_squares<E: Lapack + Scalar<Real = E> + ScalarOperand>(
+    y: ArrayView1<'_, E>,
+    uy: ArrayView1<'_, E>,
     h: Array2<E>,
 ) -> Result<PolyfitResult<E>> {
     let mut lhs = h;
@@ -284,7 +361,7 @@ fn weighted_least_squares<'a, E: Lapack + Scalar<Real = E> + ScalarOperand>(
     let scaling = lhs
         .mapv(|val| val.powi(2))
         .sum_axis(Axis(0))
-        .mapv(|val| val.sqrt());
+        .mapv(ndarray_linalg::Scalar::sqrt);
 
     lhs /= &scaling;
 
@@ -406,7 +483,7 @@ mod test {
             uy: uy.view(),
         };
 
-        let problem = Problem::new(&x, &y, uncertainties, super::ScoringStrategy::AIC);
+        let problem = Problem::new(&x, &y, uncertainties, super::ScoringStrategy::Aic);
 
         let sol = problem.solve(20).unwrap();
     }

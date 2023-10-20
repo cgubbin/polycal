@@ -1,4 +1,4 @@
-use std::ops::{AddAssign, Range};
+use std::ops::{Range};
 
 use argmin::core::ArgminFloat;
 use ndarray_linalg::Scalar;
@@ -6,7 +6,7 @@ use ndarray_linalg::Scalar;
 use crate::fit::ChebyshevFitResult;
 use crate::Result;
 
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct Unsure<E> {
     pub(crate) estimate: E,
     pub(crate) standard_uncertainty: E,
@@ -17,20 +17,25 @@ fn to_scaled<E: Scalar>(x: E, Range { start, end }: &Range<E>) -> E {
 }
 
 impl<E: Scalar<Real = E>> ChebyshevFitResult<E> {
-    /// Direct evaluation y = p_n(x, a)
-    pub fn eval_from_stimulus(&self, stimulus: Unsure<E>) -> Result<Unsure<E>> {
+    /// Direct evaluation y = `p_n(x`, a)
+    pub fn eval_from_stimulus(&self, stimulus: Unsure<E>) -> Unsure<E> {
         let t = to_scaled(stimulus.estimate, &self.solution.domain);
-        let estimate = self.solution.eval(t);
+        dbg!(&t);
+        let estimate = self.constraint.as_ref().map_or_else(
+            || self.solution.eval(t),
+            |constraint| self.solution.eval_with_constraint(t, &constraint.nu) + constraint.mu.eval(t)
+        );
+        // Todo: method with constraint
         let standard_uncertainty = self.solution.standard_uncertainty_direct(
             t,
             stimulus.standard_uncertainty,
             self.covariance.view(),
         );
 
-        Ok(Unsure {
+        Unsure {
             estimate,
             standard_uncertainty,
-        })
+        }
     }
 }
 
@@ -46,9 +51,13 @@ where
         + argmin_math::ArgminL2Norm<E>
         + argmin_math::ArgminDot<E, E>,
 {
-    /// Inverse evaluation y - p_n(x, a) = 0
+    /// Inverse evaluation y - `p_n(x`, a) = 0
     fn eval_from_response(&self, response: Unsure<E>) -> Result<Unsure<E>> {
-        let estimate = self.solution.inverse_eval(response.estimate)?;
+        let estimate = self.constraint.as_ref().map_or_else(
+            || self.solution.inverse_eval(response.estimate),
+            |constraint| self.solution.inverse_eval_with_constraint(response.estimate, constraint)
+        )?;
+        // Todo: method with constraint
         let standard_uncertainty = self.solution.standard_uncertainty_inverse(
             estimate,
             response.standard_uncertainty,
