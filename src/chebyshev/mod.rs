@@ -8,7 +8,8 @@ use basis::Basis;
 
 use primitive::CSeries;
 pub use series::Series;
-pub(crate) use builder::ChebyshevBuilder;
+#[allow(clippy::module_name_repetitions)]
+pub use builder::ChebyshevBuilder;
 use std::ops::Range;
 
 trait PolynomialSeries<E: PartialOrd>: Clone + Sized {

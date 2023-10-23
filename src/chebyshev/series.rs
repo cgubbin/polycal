@@ -296,7 +296,7 @@ mod test {
         let t0 = rng.gen();
         let actual = series.evaluate(t0);
 
-        let expected = coeff[0] + t0 * coeff[1];
+        let expected = t0.mul_add(coeff[1], coeff[0]);
         approx::assert_relative_eq!(expected, actual);
     }
 
@@ -317,7 +317,7 @@ mod test {
         let t0 = rng.gen();
         let actual = series.evaluate(t0);
 
-        let expected = coeff[0] + t0 * coeff[1] + coeff[2] * (2. * t0.powi(2) - 1.);
+        let expected = coeff[2].mul_add(2.0f64.mul_add(t0.powi(2), -1.), t0.mul_add(coeff[1], coeff[0]));
         approx::assert_relative_eq!(expected, actual);
     }
 
@@ -338,10 +338,7 @@ mod test {
         let t0 = rng.gen();
         let actual = series.evaluate(t0);
 
-        let expected = coeff[0]
-            + t0 * coeff[1]
-            + coeff[2] * (2. * t0.powi(2) - 1.)
-            + coeff[3] * (4. * t0.powi(3) - 3. * t0);
+        let expected = coeff[3].mul_add(4.0f64.mul_add(t0.powi(3), -3. * t0), coeff[2].mul_add(2.0f64.mul_add(t0.powi(2), -1.), t0.mul_add(coeff[1], coeff[0])));
         approx::assert_relative_eq!(expected, actual);
     }
 
@@ -362,11 +359,7 @@ mod test {
         let t0 = rng.gen();
         let actual = series.evaluate(t0);
 
-        let expected = coeff[0]
-            + t0 * coeff[1]
-            + coeff[2] * (2. * t0.powi(2) - 1.)
-            + coeff[3] * (4. * t0.powi(3) - 3. * t0)
-            + coeff[4] * (8. * t0.powi(4) - 8. * t0.powi(2) + 1.);
+        let expected = coeff[4].mul_add(8.0f64.mul_add(t0.powi(4), -8. * t0.powi(2)) + 1., coeff[3].mul_add(4.0f64.mul_add(t0.powi(3), -3. * t0), coeff[2].mul_add(2.0f64.mul_add(t0.powi(2), -1.), t0.mul_add(coeff[1], coeff[0]))));
         approx::assert_relative_eq!(expected, actual);
     }
 
