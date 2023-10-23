@@ -6,10 +6,10 @@ mod series;
 use crate::Result;
 pub(crate) use basis::{Basis, ConstrainedPolynomial, Polynomial};
 
-use primitive::CSeries;
-pub use series::Series;
 #[allow(clippy::module_name_repetitions)]
 pub use builder::ChebyshevBuilder;
+use primitive::CSeries;
+pub use series::Series;
 use std::ops::Range;
 
 pub(crate) trait PolynomialSeries<E: PartialOrd>: Clone + Sized {

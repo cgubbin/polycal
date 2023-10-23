@@ -1,9 +1,11 @@
 use ndarray::{Array1, Array2, ArrayView1, ArrayView2, ScalarOperand};
-use ndarray_linalg::{Scalar, Lapack};
+use ndarray_linalg::{Lapack, Scalar};
 use num_traits::float::FloatCore;
 use std::ops::Range;
 
-use crate::chebyshev::{Basis, ChebyshevBuilder, ConstrainedPolynomial, Polynomial, PolynomialSeries, Series};
+use crate::chebyshev::{
+    Basis, ChebyshevBuilder, ConstrainedPolynomial, Polynomial, PolynomialSeries, Series,
+};
 use crate::Result;
 
 pub enum ScoringStrategy {
@@ -56,7 +58,6 @@ pub struct Fit<E> {
     constraint: Option<Constraint<E>>,
 }
 
-
 impl<'a, E> Problem<'a, E>
 where
     E: Scalar<Real = E> + PartialOrd + ScalarOperand + Lapack + FloatCore,
@@ -64,19 +65,17 @@ where
     fn solve(&self, n_max: usize) -> Fit<E> {
         let fits = (1..n_max)
             .filter_map(|polynomial_degree| match self.fit(polynomial_degree) {
-                Ok(fit) => {
-                    match self.check_is_monotonic(&fit.solution) {
-                        Ok(true) => Some(fit),
-                        Ok(false) => {
-                            eprintln!("found non-monotonic solution");
-                            None
-                        }
-                        Err(err) => {
-                            eprintln!("{err:?}");
-                            None
-                        }
+                Ok(fit) => match self.check_is_monotonic(&fit.solution) {
+                    Ok(true) => Some(fit),
+                    Ok(false) => {
+                        eprintln!("found non-monotonic solution");
+                        None
                     }
-                }
+                    Err(err) => {
+                        eprintln!("{err:?}");
+                        None
+                    }
+                },
                 Err(err) => {
                     eprintln!("{err:?}");
                     None
@@ -92,7 +91,10 @@ where
     }
 
     fn find_best_fit(&self, mut fits: Vec<Fit<E>>) -> (E, Fit<E>) {
-        let scores = fits.iter().map(|fit| self.score(&fit.solution)).collect::<Vec<_>>();
+        let scores = fits
+            .iter()
+            .map(|fit| self.score(&fit.solution))
+            .collect::<Vec<_>>();
         let diffs = scores
             .windows(2)
             .map(|window| window[1] - window[0])
@@ -132,27 +134,30 @@ where
             }
             ScoringStrategy::Bic => {
                 chi_2_score
-                    + (E::from(fit.degree() + 1).unwrap() + E::one()) * E::from(self.number_of_datapoints()).unwrap().ln()
+                    + (E::from(fit.degree() + 1).unwrap() + E::one())
+                        * E::from(self.number_of_datapoints()).unwrap().ln()
             }
             ScoringStrategy::ChiSquare => chi_2_score,
         }
     }
 
     fn chi_2(&self, fit: &Series<E>) -> E {
-        self.t
-            .iter()
-            .zip(self.y)
-            .fold(E::zero(), |a, (t, y)| a + Scalar::powi(*y - self.constraint.as_ref().map_or_else(
-                || fit.evaluate(*t),
-                |constraint| fit.evaluate(*t) * constraint.multiplicative.evaluate(*t)
-            ), 2))
+        self.t.iter().zip(self.y).fold(E::zero(), |a, (t, y)| {
+            a + Scalar::powi(
+                *y - self.constraint.as_ref().map_or_else(
+                    || fit.evaluate(*t),
+                    |constraint| fit.evaluate(*t) * constraint.multiplicative.evaluate(*t),
+                ),
+                2,
+            )
+        })
     }
 
     fn fit(&self, polynomial_degree: usize) -> Result<Fit<E>> {
         let design_matrix = self.design_matrix(polynomial_degree)?;
         let y_tilde = self.constraint.as_ref().map_or_else(
             || self.y.to_owned(),
-            |constraint| self.shifted_independent_variable(constraint)
+            |constraint| self.shifted_independent_variable(constraint),
         );
 
         todo!()
@@ -176,8 +181,15 @@ where
         // )
     }
 
-    fn shifted_independent_variable(&self, Constraint { additive, multiplicative }: &Constraint<E>) -> Array1<E> {
-        self.y.to_owned()
+    fn shifted_independent_variable(
+        &self,
+        Constraint {
+            additive,
+            multiplicative,
+        }: &Constraint<E>,
+    ) -> Array1<E> {
+        self.y
+            .to_owned()
             .iter()
             .zip(self.t.iter())
             .map(|(y, t)| *y - additive.evaluate(*t))
@@ -186,18 +198,21 @@ where
 
     fn design_matrix(&self, polynomial_degree: usize) -> Result<Array2<E>> {
         let basis = Basis::new(polynomial_degree);
-        let rows = self.t
+        let rows = self
+            .t
             .iter()
-            .flat_map(|t|{
+            .flat_map(|t| {
                 self.constraint.as_ref().map_or_else(
                     || basis.polynomials(*t),
-                    |constraint| basis.polynomials_with_constraint(*t, &constraint.multiplicative)
+                    |constraint| basis.polynomials_with_constraint(*t, &constraint.multiplicative),
                 )
             })
             .collect::<Vec<E>>();
 
-
-        Ok(Array2::from_shape_vec((self.number_of_datapoints(), polynomial_degree + 1), rows)?)
+        Ok(Array2::from_shape_vec(
+            (self.number_of_datapoints(), polynomial_degree + 1),
+            rows,
+        )?)
     }
 
     fn check_is_monotonic(&self, solution: &Series<E>) -> Result<bool> {

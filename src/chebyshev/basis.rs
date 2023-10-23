@@ -26,7 +26,9 @@ pub(crate) trait Polynomial<E: Scalar<Real = E> + PartialOrd> {
     fn polynomials(&self, t: E) -> Vec<E>;
 }
 
-pub(crate) trait ConstrainedPolynomial<E: Scalar<Real = E> + PartialOrd, S: PolynomialSeries<E>>: Polynomial<E> {
+pub(crate) trait ConstrainedPolynomial<E: Scalar<Real = E> + PartialOrd, S: PolynomialSeries<E>>:
+    Polynomial<E>
+{
     /// Return the underlying polynomials as a Vec evaluated at `t`, in which each element is
     /// multiplied by the supplied constraint.
     ///
@@ -62,4 +64,7 @@ impl<E: Scalar<Real = E> + PartialOrd> Polynomial<E> for Basis {
     }
 }
 
-impl<E: Scalar<Real = E> + PartialOrd, S: PolynomialSeries<E>> ConstrainedPolynomial<E, S> for Basis { }
+impl<E: Scalar<Real = E> + PartialOrd, S: PolynomialSeries<E>> ConstrainedPolynomial<E, S>
+    for Basis
+{
+}
