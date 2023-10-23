@@ -3,12 +3,12 @@ mod builder;
 mod primitive;
 mod series;
 
+use crate::Result;
 use basis::Basis;
 use builder::ChebyshevBuilder;
 use primitive::CSeries;
 pub(crate) use series::Series;
 use std::ops::{Range, RangeBounds};
-use crate::Result;
 
 trait PolynomialSeries<E: PartialOrd>: Clone + Sized {
     fn derivative(&self, count: usize) -> Self {
@@ -30,9 +30,7 @@ trait PolynomialSeries<E: PartialOrd>: Clone + Sized {
     fn roots(&self) -> Result<Vec<E>>;
     fn roots_in_window(&self) -> Result<bool> {
         let window = self.window();
-        Ok(self.roots()?
-            .iter()
-            .any(|root| window.contains(root)))
+        Ok(self.roots()?.iter().any(|root| window.contains(root)))
     }
     fn evaluate(&self, t: E) -> E;
     fn first_derivative(&self) -> Self;

@@ -1,5 +1,5 @@
-use crate::Result;
 use super::{Basis, CSeries, PolynomialSeries};
+use crate::Result;
 use ndarray::{arr1, s, Array1, Array2, ScalarOperand};
 use ndarray_linalg::{eig::EigVals, Lapack, Scalar};
 use num_traits::float::FloatCore;
@@ -64,7 +64,9 @@ impl<E: Scalar<Real = E>> std::ops::Sub for Series<E> {
     }
 }
 
-impl<E: Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd> PolynomialSeries<E> for Series<E> {
+impl<E: Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd> PolynomialSeries<E>
+    for Series<E>
+{
     fn degree(&self) -> usize {
         self.basis.degree()
     }
@@ -137,7 +139,9 @@ impl<E: Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd> Poly
             0 => Ok(vec![]),
             1 => {
                 let mut coeffs = self.coeff.iter();
-                Ok(vec![-coeffs.next().copied().unwrap() / coeffs.next().copied().unwrap()])
+                Ok(vec![
+                    -coeffs.next().copied().unwrap() / coeffs.next().copied().unwrap(),
+                ])
             }
             _ => self.real_eigenvalues_of_companion_matrix(),
         }
@@ -149,7 +153,8 @@ where
     E: Scalar<Real = E> + ScalarOperand + Lapack + FloatCore,
 {
     fn real_eigenvalues_of_companion_matrix(&self) -> Result<Vec<E>> {
-        let mut eigenvalues = self.companion_matrix()?
+        let mut eigenvalues = self
+            .companion_matrix()?
             .eigvals()?
             .into_iter()
             .filter(|z| z.im() == E::zero())
@@ -166,14 +171,19 @@ where
             return Err("series must have degree of at least 1.".into());
         } else if self.degree() == 1 {
             let mut coeffs = self.coeff.iter();
-            return Ok(Array2::from_diag_elem(1, coeffs.next().copied().unwrap() / coeffs.next().copied().unwrap()));
+            return Ok(Array2::from_diag_elem(
+                1,
+                coeffs.next().copied().unwrap() / coeffs.next().copied().unwrap(),
+            ));
         }
 
         let mut companion_matrix = Array1::zeros(self.degree() * self.degree());
         let c = arr1(&self.coeff());
 
         let mut scl = vec![E::one()];
-        scl.extend(std::iter::repeat((E::one() / (E::one() + E::one())).sqrt()).take(self.degree() - 1));
+        scl.extend(
+            std::iter::repeat((E::one() / (E::one() + E::one())).sqrt()).take(self.degree() - 1),
+        );
         let scl = arr1(&scl);
 
         let mut top = companion_matrix.slice_mut(s![1..;self.degree()+1]);
@@ -187,11 +197,14 @@ where
         let mut companion_matrix = companion_matrix.into_shape((self.degree(), self.degree()))?;
 
         let curr_rcol = companion_matrix.slice(s![.., self.degree() - 1]).to_owned();
-        companion_matrix.slice_mut(s![.., self.degree() - 1]).assign(
-            &(curr_rcol
-                - c.slice(s![..self.degree()]).mapv(|v| v / (E::one() + E::one()) / c[self.degree()])
-                    * scl.mapv(|v| v / scl[self.degree() - 1])),
-        );
+        companion_matrix
+            .slice_mut(s![.., self.degree() - 1])
+            .assign(
+                &(curr_rcol
+                    - c.slice(s![..self.degree()])
+                        .mapv(|v| v / (E::one() + E::one()) / c[self.degree()])
+                        * scl.mapv(|v| v / scl[self.degree() - 1])),
+            );
 
         Ok(companion_matrix)
     }
@@ -361,7 +374,10 @@ mod test {
     fn first_order_chebyshev_derivative_is_correct() {
         let series = ChebyshevBuilder::new(3)
             .with_coefficients(vec![1., 2., 3., 4.])
-            .on_domain( Range { start: -1., end: 1. } )
+            .on_domain(Range {
+                start: -1.,
+                end: 1.,
+            })
             .build();
 
         let result = series.first_derivative().coeff();

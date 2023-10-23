@@ -1,10 +1,10 @@
-use std::marker::PhantomData;
 use ndarray::{ArrayView1, ArrayView2};
 use ndarray_linalg::Scalar;
+use std::marker::PhantomData;
 
 // use crate::fit::{Covariance, PolyConstraint, Problem, ScoringStrategy};
 //
-use crate::problem::{Covariance, Constraint, Problem, ScoringStrategy};
+use crate::problem::{Constraint, Covariance, Problem, ScoringStrategy};
 use crate::utils::{form_rescaled_variables, Rescaled};
 
 #[derive(Default)]
@@ -24,7 +24,6 @@ struct ProblemBuilder<'a, E, DU, IU, DC, IC, C> {
     strategy: ScoringStrategy,
     typestate: PhantomData<(DU, IU, DC, IC, C)>,
 }
-
 
 impl<'a, E> ProblemBuilder<'a, E, Unset, Unset, Unset, Unset, Unset> {
     fn new<V: Into<ArrayView1<'a, E>>>(independent: V, dependent: V) -> Self {
@@ -217,9 +216,7 @@ impl<'a, E, DU, IU, DC, IC> ProblemBuilder<'a, E, DU, IU, DC, IC, Unset> {
     }
 }
 
-impl<'a, E: PartialOrd + Scalar>
-    ProblemBuilder<'a, E, Unset, Unset, Unset, Unset, Unset>
-{
+impl<'a, E: PartialOrd + Scalar> ProblemBuilder<'a, E, Unset, Unset, Unset, Unset, Unset> {
     fn build(self) -> Problem<'a, E> {
         let Rescaled { t, domain } = form_rescaled_variables(self.independent);
         Problem {
@@ -233,9 +230,7 @@ impl<'a, E: PartialOrd + Scalar>
     }
 }
 
-impl<'a, E: PartialOrd + Scalar>
-    ProblemBuilder<'a, E, Unset, Set, Unset, Unset, Unset>
-{
+impl<'a, E: PartialOrd + Scalar> ProblemBuilder<'a, E, Unset, Set, Unset, Unset, Unset> {
     fn build(self) -> Problem<'a, E> {
         let Rescaled { t, domain } = form_rescaled_variables(self.independent);
 
@@ -253,9 +248,7 @@ impl<'a, E: PartialOrd + Scalar>
     }
 }
 
-impl<'a, E: PartialOrd + Scalar>
-    ProblemBuilder<'a, E, Set, Set, Unset, Unset, Unset>
-{
+impl<'a, E: PartialOrd + Scalar> ProblemBuilder<'a, E, Set, Set, Unset, Unset, Unset> {
     fn build(self) -> Problem<'a, E> {
         let Rescaled { t, domain } = form_rescaled_variables(self.independent);
         Problem {
@@ -272,9 +265,7 @@ impl<'a, E: PartialOrd + Scalar>
     }
 }
 
-impl<'a, E: PartialOrd + Scalar>
-    ProblemBuilder<'a, E, Unset, Unset, Unset, Set, Unset>
-{
+impl<'a, E: PartialOrd + Scalar> ProblemBuilder<'a, E, Unset, Unset, Unset, Set, Unset> {
     fn build(self) -> Problem<'a, E> {
         let Rescaled { t, domain } = form_rescaled_variables(self.independent);
         Problem {
@@ -291,9 +282,7 @@ impl<'a, E: PartialOrd + Scalar>
     }
 }
 
-impl<'a, E: PartialOrd + Scalar>
-    ProblemBuilder<'a, E, Unset, Unset, Set, Set, Unset>
-{
+impl<'a, E: PartialOrd + Scalar> ProblemBuilder<'a, E, Unset, Unset, Set, Set, Unset> {
     fn build(self) -> Problem<'a, E> {
         let Rescaled { t, domain } = form_rescaled_variables(self.independent);
         Problem {
@@ -309,7 +298,6 @@ impl<'a, E: PartialOrd + Scalar>
         }
     }
 }
-
 
 impl<'a, E: PartialOrd + Scalar, C: Into<Constraint<E>>>
     ProblemBuilder<'a, E, Unset, Unset, Unset, Unset, C>

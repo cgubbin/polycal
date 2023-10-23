@@ -3,7 +3,6 @@ use std::ops::Range;
 
 use crate::chebyshev::Series;
 
-
 pub enum ScoringStrategy {
     /// Akaike's method
     Aic,

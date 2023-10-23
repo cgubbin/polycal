@@ -15,12 +15,8 @@ pub(crate) fn form_rescaled_variables<E: PartialOrd + Scalar>(x: ArrayView1<'_, 
         .map(|&x| (x + x - domain.end - domain.start) / (domain.end - domain.start))
         .collect();
 
-    Rescaled {
-        t,
-        domain,
-    }
+    Rescaled { t, domain }
 }
-
 
 /// Returns the range spanning the minimium and maximum of the `variable`
 ///
