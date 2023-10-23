@@ -4,7 +4,7 @@ mod primitive;
 mod series;
 
 use crate::Result;
-use basis::Basis;
+pub(crate) use basis::{Basis, ConstrainedPolynomial, Polynomial};
 
 use primitive::CSeries;
 pub use series::Series;
@@ -12,7 +12,7 @@ pub use series::Series;
 pub use builder::ChebyshevBuilder;
 use std::ops::Range;
 
-trait PolynomialSeries<E: PartialOrd>: Clone + Sized {
+pub(crate) trait PolynomialSeries<E: PartialOrd>: Clone + Sized {
     fn derivative(&self, count: usize) -> Self {
         match count {
             // zero order just returns the current Series
@@ -43,4 +43,8 @@ trait PolynomialSeries<E: PartialOrd>: Clone + Sized {
     fn domain(&self) -> Range<E>;
     fn window(&self) -> Range<E>;
     fn null(domain: Range<E>, window: Range<E>) -> Self;
+    fn is_monotonic(&self) -> Result<bool> {
+        let derivative = self.first_derivative();
+        derivative.roots_in_window()
+    }
 }

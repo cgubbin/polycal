@@ -2,7 +2,7 @@ use super::PolynomialSeries;
 use ndarray_linalg::Scalar;
 
 #[derive(Clone, Debug)]
-pub struct Basis {
+pub(crate) struct Basis {
     degree: usize,
 }
 
@@ -16,7 +16,7 @@ impl Basis {
     }
 }
 
-trait Polynomials<E: Scalar<Real = E> + PartialOrd, S: PolynomialSeries<E>> {
+pub(crate) trait Polynomial<E: Scalar<Real = E> + PartialOrd> {
     /// Return the underlying polynomials as a Vec evaluated at `t`
     ///
     /// This assumes t is in the rescaled range [-1, 1], as this is the basis the polynomials are
@@ -24,6 +24,9 @@ trait Polynomials<E: Scalar<Real = E> + PartialOrd, S: PolynomialSeries<E>> {
     /// representing the constant offset from the zero-order term followed by one for each polynomial in the
     /// series of `degree`.
     fn polynomials(&self, t: E) -> Vec<E>;
+}
+
+pub(crate) trait ConstrainedPolynomial<E: Scalar<Real = E> + PartialOrd, S: PolynomialSeries<E>>: Polynomial<E> {
     /// Return the underlying polynomials as a Vec evaluated at `t`, in which each element is
     /// multiplied by the supplied constraint.
     ///
@@ -43,7 +46,7 @@ trait Polynomials<E: Scalar<Real = E> + PartialOrd, S: PolynomialSeries<E>> {
     }
 }
 
-impl<E: Scalar<Real = E> + PartialOrd, S: PolynomialSeries<E>> Polynomials<E, S> for Basis {
+impl<E: Scalar<Real = E> + PartialOrd> Polynomial<E> for Basis {
     fn polynomials(&self, t: E) -> Vec<E> {
         match self.degree() {
             0 => vec![E::one()],
@@ -58,3 +61,5 @@ impl<E: Scalar<Real = E> + PartialOrd, S: PolynomialSeries<E>> Polynomials<E, S>
         }
     }
 }
+
+impl<E: Scalar<Real = E> + PartialOrd, S: PolynomialSeries<E>> ConstrainedPolynomial<E, S> for Basis { }

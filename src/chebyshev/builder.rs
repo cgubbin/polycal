@@ -122,3 +122,14 @@ impl<E: Scalar<Real = E>> ChebyshevBuilder<Vec<E>, Range<E>, Unset> {
         }
     }
 }
+
+impl<E: Scalar<Real = E>> ChebyshevBuilder<Vec<E>, Range<E>, Range<E>> {
+    pub(crate) fn build(self) -> Series<E> {
+        Series {
+            basis: Basis::new(self.degree),
+            coeff: self.coeff.into(),
+            domain: self.domain,
+            window: self.window,
+        }
+    }
+}
