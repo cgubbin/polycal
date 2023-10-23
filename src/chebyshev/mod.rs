@@ -5,21 +5,22 @@ mod series;
 
 use crate::Result;
 use basis::Basis;
-use builder::ChebyshevBuilder;
+
 use primitive::CSeries;
-pub(crate) use series::Series;
-use std::ops::{Range, RangeBounds};
+pub use series::Series;
+pub(crate) use builder::ChebyshevBuilder;
+use std::ops::Range;
 
 trait PolynomialSeries<E: PartialOrd>: Clone + Sized {
     fn derivative(&self, count: usize) -> Self {
         match count {
             // zero order just returns the current Series
-            0 => self.to_owned().clone(),
+            0 => self.to_owned(),
             // If count exceeds the polynomial degree + 1 the series is emptied
             count if count > self.degree() + 1 => Self::null(self.domain(), self.window()),
             // Else do n differentiation ops
             count => {
-                let mut current = self.to_owned().clone();
+                let mut current = self.to_owned();
                 for _ in 0..count {
                     current = current.first_derivative();
                 }

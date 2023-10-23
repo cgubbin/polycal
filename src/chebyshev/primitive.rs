@@ -15,7 +15,7 @@ use ndarray_linalg::Scalar;
 
 /// A c-series represents the coefficients of a Chebyshev series
 #[derive(Clone, Debug)]
-pub(crate) struct CSeries<E>(Array1<E>);
+pub struct CSeries<E>(Array1<E>);
 
 impl<E> CSeries<E> {
     pub(crate) fn new(series: impl Into<Array1<E>>) -> Self {
@@ -123,7 +123,7 @@ impl<E: Scalar<Real = E>> CSeries<E> {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct ZSeries<E>(Array1<E>);
+pub struct ZSeries<E>(Array1<E>);
 
 impl<E: Scalar<Real = E>> From<CSeries<E>> for ZSeries<E> {
     fn from(value: CSeries<E>) -> Self {
@@ -189,7 +189,6 @@ impl<E: Scalar<Real = E>> std::ops::Mul for ZSeries<E> {
 mod test {
     use super::{convolve, CSeries, Mode, ZSeries};
     use ndarray::{array, Array1};
-    use std::ops::Range;
 
     use ndarray_rand::rand::{Rng, SeedableRng};
     use rand_isaac::Isaac64Rng;
@@ -289,20 +288,20 @@ mod test {
     fn convolve_large_window() {
         let data = array![0.5, 0., 0.5];
         let window = array![
-            0.004580594210830624,
-            0.019638914128155882,
-            0.12406477973236824,
-            0.3805431212757002,
-            0.6263732815125124,
-            0.3805431212757002,
-            0.12406477973236824,
-            0.019638914128155882,
-            0.004580594210830624
+            0.004_580_594_210_830_624,
+            0.019_638_914_128_155_882,
+            0.124_064_779_732_368_24,
+            0.380_543_121_275_700_2,
+            0.626_373_281_512_512_4,
+            0.380_543_121_275_700_2,
+            0.124_064_779_732_368_24,
+            0.019_638_914_128_155_882,
+            0.004_580_594_210_830_624
         ];
         let result = convolve(data.view(), window.view(), Mode::Full);
         let expected = array![
-            0.0022903, 0.00981946, 0.06432269, 0.20009102, 0.37521903, 0.38054312, 0.37521903,
-            0.20009102, 0.06432269, 0.00981946, 0.0022903
+            0.002_290_3, 0.009_819_46, 0.064_322_69, 0.200_091_02, 0.375_219_03, 0.380_543_12, 0.375_219_03,
+            0.200_091_02, 0.064_322_69, 0.009_819_46, 0.002_290_3
         ];
         dbg!(&result);
 

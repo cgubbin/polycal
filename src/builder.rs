@@ -201,7 +201,7 @@ impl<'a, E, C> ProblemBuilder<'a, E, Unset, Unset, Set, Unset, C> {
 }
 
 impl<'a, E, DU, IU, DC, IC> ProblemBuilder<'a, E, DU, IU, DC, IC, Unset> {
-    fn with_constraint<C>(self, constraint: C) -> ProblemBuilder<'a, E, DU, IU, DC, IC, C> {
+    const fn with_constraint<C>(self, constraint: C) -> ProblemBuilder<'a, E, DU, IU, DC, IC, C> {
         ProblemBuilder {
             dependent: self.dependent,
             independent: self.independent,
@@ -311,7 +311,7 @@ impl<'a, E: PartialOrd + Scalar, C: Into<Constraint<E>>>
             uncertainties: Covariance::None,
             domain,
             strategy: self.strategy,
-            constraint: self.constraint.map(|constraint| constraint.into()),
+            constraint: self.constraint.map(std::convert::Into::into),
         }
     }
 }
@@ -331,7 +331,7 @@ impl<'a, E: PartialOrd + Scalar, C: Into<Constraint<E>>>
             },
             domain,
             strategy: self.strategy,
-            constraint: self.constraint.map(|constraint| constraint.into()),
+            constraint: self.constraint.map(std::convert::Into::into),
         }
     }
 }
@@ -350,7 +350,7 @@ impl<'a, E: PartialOrd + Scalar, C: Into<Constraint<E>>>
             },
             domain,
             strategy: self.strategy,
-            constraint: self.constraint.map(|constraint| constraint.into()),
+            constraint: self.constraint.map(std::convert::Into::into),
         }
     }
 }
@@ -369,7 +369,7 @@ impl<'a, E: PartialOrd + Scalar, C: Into<Constraint<E>>>
             },
             domain,
             strategy: self.strategy,
-            constraint: self.constraint.map(|constraint| constraint.into()),
+            constraint: self.constraint.map(std::convert::Into::into),
         }
     }
 }
@@ -388,7 +388,7 @@ impl<'a, E: PartialOrd + Scalar, C: Into<Constraint<E>>>
             },
             domain,
             strategy: self.strategy,
-            constraint: self.constraint.map(|constraint| constraint.into()),
+            constraint: self.constraint.map(std::convert::Into::into),
         }
     }
 }

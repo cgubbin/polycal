@@ -7,12 +7,13 @@ use crate::utils::find_limits;
 use crate::Result;
 
 #[derive(Default)]
-pub(crate) struct Set {}
+pub struct Set {}
 
 #[derive(Default)]
-pub(crate) struct Unset {}
+pub struct Unset {}
 
-pub(crate) struct ChebyshevBuilder<C, D, W> {
+#[allow(clippy::module_name_repetitions)]
+pub struct ChebyshevBuilder<C, D, W> {
     degree: usize,
     coeff: C,
     domain: D,

@@ -2,7 +2,7 @@ use super::PolynomialSeries;
 use ndarray_linalg::Scalar;
 
 #[derive(Clone, Debug)]
-pub(crate) struct Basis {
+pub struct Basis {
     degree: usize,
 }
 
