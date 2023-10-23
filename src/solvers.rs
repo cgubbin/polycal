@@ -1,0 +1,103 @@
+use crate::chebyshev::{ChebyshevBuilder, PolynomialSeries};
+use crate::Result;
+use crate::utils::outer_product;
+use argmin::core::{Jacobian, Operator};
+use ndarray::{s, Array1, Array2, ArrayView1, ArrayView2, Axis, ScalarOperand};
+use ndarray_linalg::{Cholesky, Inverse, Lapack, LeastSquaresSvd, Scalar, UPLO};
+use num_traits::float::FloatCore;
+use std::ops::Range;
+
+pub struct Solution<E> {
+    solution: Array1<E>,
+    covariance: Array2<E>,
+}
+
+trait SolveSystem<E> {
+    fn solve(&self) -> Result<Solution<E>>;
+}
+
+
+enum Uncertainty<'a, E> {
+    None,
+    Diagonal(ArrayView1<'a, E>),
+    Full(ArrayView2<'a, E>),
+}
+
+struct WeightedLeastSquares<'a, E> {
+    y: ArrayView1<'a, E>,
+    uncertainty: Uncertainty<'a, E>,
+    h: ArrayView2<'a, E>,
+}
+
+impl<'a, E: Lapack + Scalar<Real = E> + ScalarOperand> SolveSystem<E> for WeightedLeastSquares<'a, E> {
+    fn solve(
+        &self,
+    ) -> Result<Solution<E>> {
+        match self.uncertainty {
+            Uncertainty::None => self.solve_unweighted(),
+            Uncertainty::Diagonal(uy) => self.solve_weighted(uy),
+            Uncertainty::Full(vy) => self.solve_full(vy),
+        }
+    }
+}
+
+
+
+impl<'a, E: Lapack + Scalar<Real = E> + ScalarOperand> WeightedLeastSquares<'a, E> {
+    fn solve_unweighted(&self) -> Result<Solution<E>> {
+        let mut lhs = self.h.to_owned();
+        let rhs = self.y.to_owned();
+        let scaling = lhs
+            .mapv(|val| val.powi(2))
+            .sum_axis(Axis(0))
+            .mapv(ndarray_linalg::Scalar::sqrt);
+
+        lhs /= &scaling;
+
+        let result = lhs.least_squares(&rhs)?;
+
+        let solution = (&result.solution.t() / &scaling).t().to_owned();
+
+        let covariance = (lhs.t().dot(&lhs)).inv()? / outer_product(&scaling, &scaling)?;
+
+        Ok(Solution { solution, covariance })
+    }
+
+    fn solve_weighted(&self, uy: ArrayView1<'a, E>) -> Result<Solution<E>> {
+        let mut lhs = self.h.to_owned();
+        let uy = uy.to_owned();
+
+        let rhs = self.y.to_owned() / uy.mapv(|x| x.powi(2));
+
+        for (ii, uy) in uy.iter().enumerate() {
+            let mut slice = lhs.slice_mut(s![ii, ..]);
+            slice /= uy.powi(2);
+        }
+
+        let scaling = lhs
+            .mapv(|val| val.powi(2))
+            .sum_axis(Axis(0))
+            .mapv(ndarray_linalg::Scalar::sqrt);
+
+        lhs /= &scaling;
+
+        let result = lhs.least_squares(&rhs)?;
+
+        let solution = (&result.solution.t() / &scaling).t().to_owned();
+
+        let covariance = (lhs.t().dot(&lhs)).inv()? / outer_product(&scaling, &scaling)?;
+
+        Ok(Solution { solution, covariance })
+    }
+
+    fn solve_full(&self, vy: ArrayView2<'a, E>) -> Result<Solution<E>> {
+        let mut lhs = self.h.to_owned();
+        let vy = vy.to_owned();
+
+        let lower = vy.cholesky(UPLO::Lower)?;
+
+        unimplemented!("no impl for full-rank WLS for now.");
+    }
+}
+
+

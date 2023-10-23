@@ -357,7 +357,6 @@ fn weighted_least_squares<E: Lapack + Scalar<Real = E> + ScalarOperand>(
         let mut slice = lhs.slice_mut(s![ii, ..]);
         slice /= uy.powi(2);
     }
-
     let scaling = lhs
         .mapv(|val| val.powi(2))
         .sum_axis(Axis(0))
