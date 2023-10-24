@@ -7,7 +7,7 @@ use argmin::{
 };
 use ndarray::{Array1, Array2, ScalarOperand};
 use ndarray_linalg::{Lapack, Scalar};
-use ndarray_rand::{rand::{Rng, SeedableRng, RngCore}, rand_distr::{Uniform, uniform::SampleUniform, Distribution}};
+use ndarray_rand::{rand::SeedableRng, rand_distr::{Uniform, uniform::SampleUniform, Distribution}};
 use num_traits::float::FloatCore;
 use rand_isaac::Isaac64Rng;
 use std::ops::Range;
