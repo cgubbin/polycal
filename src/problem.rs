@@ -58,6 +58,7 @@ impl<'a, E> Problem<'a, E>
 where
     E: Scalar<Real = E> + PartialOrd + ScalarOperand + Lapack + FloatCore,
 {
+    #[tracing::instrument(skip(self))]
     pub fn solve(&self, n_max: usize) -> Result<Fit<E>> {
         let fits = (1..n_max)
             .filter_map(|polynomial_degree| match self.fit(polynomial_degree) {
@@ -216,7 +217,7 @@ where
             .collect()
     }
 
-    fn design_matrix(&self, polynomial_degree: usize) -> Result<Array2<E>> {
+    pub(crate) fn design_matrix(&self, polynomial_degree: usize) -> Result<Array2<E>> {
         let basis = Basis::new(polynomial_degree);
         let rows = self
             .t

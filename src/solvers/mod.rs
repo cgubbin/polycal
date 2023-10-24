@@ -27,6 +27,7 @@ pub trait SolveSystem<E> {
     fn solve(&self) -> Result<Solution<E>>;
 }
 
+#[derive(Clone)]
 pub enum Uncertainty<'a, E> {
     None,
     Diagonal(ArrayView1<'a, E>),

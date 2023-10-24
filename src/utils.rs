@@ -8,6 +8,10 @@ pub struct Rescaled<E> {
     pub(crate) domain: Range<E>,
 }
 
+pub fn to_unscaled<E: Scalar>(x: E, Range { start, end }: &Range<E>) -> E {
+    (x * (*end - *start) + *end + *start) / (E::one() + E::one())
+}
+
 pub fn to_scaled<E: Scalar>(x: E, Range { start, end }: &Range<E>) -> E {
     (x + x - *end - *start) / (*end - *start)
 }
@@ -46,4 +50,33 @@ pub fn outer_product<T: Scalar>(a: &Array1<T>, b: &Array1<T>) -> Result<Array2<T
     let b: Array2<T> = b.clone().into_shape((1, b.len()))?;
 
     Ok(ndarray::linalg::kron(&a, &b))
+}
+
+#[cfg(test)]
+mod test {
+    use ndarray_rand::rand::{SeedableRng, Rng};
+    use rand_isaac::Isaac64Rng;
+    use std::ops::Range;
+
+    use crate::utils::{to_scaled, to_unscaled};
+
+    #[test]
+    fn scaling_roundtrip_is_successful() {
+        let state = 40;
+        let mut rng = Isaac64Rng::seed_from_u64(state);
+
+        let start: f64 = rng.gen();
+        let end = rng.gen_range((2.*start)..(10.*start));
+
+        let domain = Range { start, end };
+
+        let input = rng.gen();
+        let scaled = to_scaled(input, &domain);
+        let output = to_unscaled(scaled, &domain);
+
+        approx::assert_relative_eq!(input, output);
+
+        let backward_output = to_scaled(output, &domain);
+        approx::assert_relative_eq!(scaled, backward_output);
+    }
 }

@@ -18,7 +18,7 @@ pub trait PolynomialSeries<E: PartialOrd>: Clone + Sized {
             // zero order just returns the current Series
             0 => self.to_owned(),
             // If count exceeds the polynomial degree + 1 the series is emptied
-            count if count > self.degree() + 1 => Self::null(self.domain(), self.window()),
+            count if count > self.degree() => Self::null(self.domain(), self.window()),
             // Else do n differentiation ops
             count => {
                 let mut current = self.to_owned();
@@ -32,7 +32,7 @@ pub trait PolynomialSeries<E: PartialOrd>: Clone + Sized {
     fn roots(&self) -> Result<Vec<E>>;
     fn roots_in_window(&self) -> Result<bool> {
         let window = self.window();
-        Ok(self.roots()?.iter().any(|root| window.contains(root)))
+        Ok(!self.roots()?.iter().any(|root| window.contains(root)))
     }
     fn evaluate(&self, t: E) -> E;
     fn first_derivative(&self) -> Self;
@@ -44,7 +44,7 @@ pub trait PolynomialSeries<E: PartialOrd>: Clone + Sized {
     fn window(&self) -> Range<E>;
     fn null(domain: Range<E>, window: Range<E>) -> Self;
     fn is_monotonic(&self) -> Result<bool> {
-        let derivative = self.first_derivative();
+        let derivative = self.derivative(1);
         derivative.roots_in_window()
     }
 }

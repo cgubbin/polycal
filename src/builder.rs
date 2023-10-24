@@ -8,10 +8,10 @@ use crate::problem::{Constraint, Covariance, Problem, ScoringStrategy};
 use crate::utils::{form_rescaled_variables, Rescaled};
 
 #[derive(Default)]
-struct Set {}
+pub(crate) struct Set {}
 
 #[derive(Default)]
-struct Unset {}
+pub(crate) struct Unset {}
 
 pub struct ProblemBuilder<'a, E, DU, IU, DC, IC, C> {
     dependent: ArrayView1<'a, E>,
@@ -163,7 +163,7 @@ impl<'a, E, C> ProblemBuilder<'a, E, Unset, Unset, Unset, Set, C> {
 }
 
 impl<'a, E, C> ProblemBuilder<'a, E, Unset, Unset, Unset, Unset, C> {
-    fn with_independent_covariance(
+    pub(crate) fn with_independent_covariance(
         self,
         independent_covariance: impl Into<ArrayView2<'a, E>>,
     ) -> ProblemBuilder<'a, E, Unset, Unset, Unset, Set, C> {
@@ -273,7 +273,7 @@ impl<'a, E: PartialOrd + Scalar> ProblemBuilder<'a, E, Set, Set, Unset, Unset, U
 }
 
 impl<'a, E: PartialOrd + Scalar> ProblemBuilder<'a, E, Unset, Unset, Unset, Set, Unset> {
-    fn build(self) -> Problem<'a, E> {
+    pub(crate) fn build(self) -> Problem<'a, E> {
         let Rescaled { t, domain } = form_rescaled_variables(self.independent);
         Problem {
             t,

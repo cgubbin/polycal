@@ -90,7 +90,6 @@ impl<E: Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd> Poly
 
     fn evaluate(&self, t: E) -> E {
         let mut coeffs = self.coeff.iter();
-        println!("degree {}", self.degree());
         let (c0, c1) = if self.degree() < 2 {
             (
                 coeffs.next().copied().unwrap_or_else(E::zero),
