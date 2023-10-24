@@ -1,32 +1,14 @@
-use crate::chebyshev::{ChebyshevBuilder, PolynomialSeries};
 use crate::Result;
 use crate::utils::outer_product;
-use argmin::core::{Jacobian, Operator};
-use ndarray::{s, Array1, Array2, ArrayView1, ArrayView2, Axis, ScalarOperand};
+use super::{SolveSystem, Solution, Uncertainty};
+use ndarray::{s, ArrayView1, ArrayView2, Array1, Array2, Axis, ScalarOperand};
 use ndarray_linalg::{Cholesky, Inverse, Lapack, LeastSquaresSvd, Scalar, UPLO};
-use num_traits::float::FloatCore;
-use std::ops::Range;
-
-pub struct Solution<E> {
-    solution: Array1<E>,
-    covariance: Array2<E>,
-}
-
-trait SolveSystem<E> {
-    fn solve(&self) -> Result<Solution<E>>;
-}
 
 
-enum Uncertainty<'a, E> {
-    None,
-    Diagonal(ArrayView1<'a, E>),
-    Full(ArrayView2<'a, E>),
-}
-
-struct WeightedLeastSquares<'a, E> {
-    y: ArrayView1<'a, E>,
-    uncertainty: Uncertainty<'a, E>,
-    h: ArrayView2<'a, E>,
+pub(crate) struct WeightedLeastSquares<'a, E> {
+    pub(crate) y: Array1<E>,
+    pub(crate) uncertainty: Uncertainty<'a, E>,
+    pub(crate) h: Array2<E>,
 }
 
 impl<'a, E: Lapack + Scalar<Real = E> + ScalarOperand> SolveSystem<E> for WeightedLeastSquares<'a, E> {
@@ -56,11 +38,11 @@ impl<'a, E: Lapack + Scalar<Real = E> + ScalarOperand> WeightedLeastSquares<'a, 
 
         let result = lhs.least_squares(&rhs)?;
 
-        let solution = (&result.solution.t() / &scaling).t().to_owned();
+        let coeff = (&result.solution.t() / &scaling).t().to_owned();
 
         let covariance = (lhs.t().dot(&lhs)).inv()? / outer_product(&scaling, &scaling)?;
 
-        Ok(Solution { solution, covariance })
+        Ok(Solution { coeff, dependent_central_values: None, covariance })
     }
 
     fn solve_weighted(&self, uy: ArrayView1<'a, E>) -> Result<Solution<E>> {
@@ -83,11 +65,11 @@ impl<'a, E: Lapack + Scalar<Real = E> + ScalarOperand> WeightedLeastSquares<'a, 
 
         let result = lhs.least_squares(&rhs)?;
 
-        let solution = (&result.solution.t() / &scaling).t().to_owned();
+        let coeff = (&result.solution.t() / &scaling).t().to_owned();
 
         let covariance = (lhs.t().dot(&lhs)).inv()? / outer_product(&scaling, &scaling)?;
 
-        Ok(Solution { solution, covariance })
+        Ok(Solution { coeff, dependent_central_values: None, covariance })
     }
 
     fn solve_full(&self, vy: ArrayView2<'a, E>) -> Result<Solution<E>> {

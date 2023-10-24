@@ -6,6 +6,7 @@ use std::ops::Range;
 use crate::chebyshev::{
     Basis, ChebyshevBuilder, ConstrainedPolynomial, Polynomial, PolynomialSeries, Series,
 };
+use crate::solvers::{SolveSystem, TotalLeastSquares, Uncertainty, WeightedLeastSquares};
 use crate::Result;
 
 pub enum ScoringStrategy {
@@ -56,6 +57,34 @@ pub struct Fit<E> {
     solution: Series<E>,
     covariance: Array2<E>,
     constraint: Option<Constraint<E>>,
+}
+
+impl<E> Fit<E> {
+    pub(crate) const fn domain(&self) -> &Range<E> {
+        &self.solution.domain
+    }
+
+    pub(crate) const fn constraint(&self) -> Option<&Constraint<E>> {
+        self.constraint.as_ref()
+    }
+}
+
+impl<E: Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd> Fit<E> {
+    pub(crate) fn evaluate_direct(&self, t: E) -> E {
+        self.solution.evaluate(t)
+    }
+
+    fn q(&self, t: E) -> E {
+        let Range { start, end } = self.domain();
+        (E::one() + E::one()) / (*end - *start) * self.solution.first_derivative().evaluate(t)
+
+    }
+
+    pub(crate) fn evaluate_direct_uncertainty(&self, t: E, uncertainty_x: E) -> E {
+        let g: Array1<E> = self.solution.basis.polynomials(t).into();
+        (Scalar::powi(self.q(t), 2) * Scalar::powi(uncertainty_x, 2) + g.dot(&self.covariance.dot(&g))).sqrt()
+
+    }
 }
 
 impl<'a, E> Problem<'a, E>
@@ -155,30 +184,41 @@ where
 
     fn fit(&self, polynomial_degree: usize) -> Result<Fit<E>> {
         let design_matrix = self.design_matrix(polynomial_degree)?;
-        let y_tilde = self.constraint.as_ref().map_or_else(
+        let y = self.constraint.as_ref().map_or_else(
             || self.y.to_owned(),
             |constraint| self.shifted_independent_variable(constraint),
         );
 
-        todo!()
-        // let result = match self.uncertainties {
-        //     Covariance::None => todo!(),
-        //     Covariance::Uncertainty { ux, uy } if ux.is_none() => todo!(),
-        //     Covariance::Uncertainty { ux, uy } => todo!(),
-        //     Covariance::Covariance { vx, vy } if vx.is_none() => todo!(),
-        //     Covariance::Covariance { vx, vy } => todo!(),
-        // }?;
+        let result = match self.uncertainties {
+            Covariance::None => WeightedLeastSquares {
+                y: y, uncertainty: Uncertainty::None, h: design_matrix
+            }.solve(),
+            Covariance::Uncertainty { ux, uy } if ux.is_none() => WeightedLeastSquares {
+                y: y, uncertainty: Uncertainty::Diagonal(uy), h: design_matrix
+            }.solve(),
+            Covariance::Covariance { vx, vy } if vx.is_none() => WeightedLeastSquares {
+                y: y, uncertainty: Uncertainty::Full(vy), h: design_matrix
+            }.solve(),
+            Covariance::Uncertainty { ux, uy } => TotalLeastSquares {
+                y: y, uncertainty_x: Uncertainty::Diagonal(ux.unwrap()),
+                uncertainty_y: Uncertainty::Diagonal(uy), h: design_matrix,
+            }.solve(),
+            Covariance::Covariance { vx, vy } => TotalLeastSquares {
+                y: y, uncertainty_x: Uncertainty::Full(vx.unwrap()),
+                uncertainty_y: Uncertainty::Full(vy), h: design_matrix,
+            }.solve(),
+        }?;
 
-        // Ok(
-        //     Fit {
-        //         solution: ChebyshevBuilder::new(polynomial_degree)
-        //             .with_coefficients(result.coeff)
-        //             .on_domain(self.domain.clone())
-        //             .build(),
-        //         covariance: result.covariance,
-        //         constraint: self.constraint.clone(),
-        //     }
-        // )
+        Ok(
+            Fit {
+                solution: ChebyshevBuilder::new(polynomial_degree)
+                    .with_coefficients(result.coeff().to_vec())
+                    .on_domain(self.domain.clone())
+                    .build(),
+                covariance: result.covariance().to_owned(),
+                constraint: self.constraint.clone(),
+            }
+        )
     }
 
     fn shifted_independent_variable(

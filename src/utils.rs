@@ -8,12 +8,16 @@ pub struct Rescaled<E> {
     pub(crate) domain: Range<E>,
 }
 
+pub(crate) fn to_scaled<E: Scalar>(x: E, Range { start, end }: &Range<E>) -> E {
+        (x + x - *end - *start) / (*end - *start)
+}
+
 pub fn form_rescaled_variables<E: PartialOrd + Scalar>(x: ArrayView1<'_, E>) -> Rescaled<E> {
     let domain = find_limits(x.as_slice().unwrap());
 
     let t = x
         .into_iter()
-        .map(|&x| (x + x - domain.end - domain.start) / (domain.end - domain.start))
+        .map(|&x| to_scaled(x, &domain))
         .collect();
 
     Rescaled { t, domain }
