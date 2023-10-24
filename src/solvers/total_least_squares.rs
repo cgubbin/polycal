@@ -1,8 +1,7 @@
+use super::{Solution, SolveSystem, Uncertainty};
 use crate::Result;
-use super::{SolveSystem, Solution, Uncertainty};
 use ndarray::{Array1, Array2, ArrayView1, ArrayView2, ScalarOperand};
 use ndarray_linalg::{Lapack, Scalar};
-
 
 pub(crate) struct TotalLeastSquares<'a, E> {
     pub(crate) y: Array1<E>,
@@ -12,9 +11,7 @@ pub(crate) struct TotalLeastSquares<'a, E> {
 }
 
 impl<'a, E: Lapack + Scalar<Real = E> + ScalarOperand> SolveSystem<E> for TotalLeastSquares<'a, E> {
-    fn solve(
-        &self,
-    ) -> Result<Solution<E>> {
+    fn solve(&self) -> Result<Solution<E>> {
         match (&self.uncertainty_x, &self.uncertainty_y) {
             (Uncertainty::Diagonal(ux), Uncertainty::Diagonal(uy)) => self.solve_diagonal(*ux, *uy),
             (Uncertainty::Full(vx), Uncertainty::Full(vy)) => self.solve_full_rank(*vx, *vy),
@@ -22,8 +19,6 @@ impl<'a, E: Lapack + Scalar<Real = E> + ScalarOperand> SolveSystem<E> for TotalL
         }
     }
 }
-
-
 
 impl<'a, E: Lapack + Scalar<Real = E> + ScalarOperand> TotalLeastSquares<'a, E> {
     fn solve_diagonal(&self, ux: ArrayView1<'a, E>, uy: ArrayView1<'a, E>) -> Result<Solution<E>> {

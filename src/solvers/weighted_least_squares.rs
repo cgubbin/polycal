@@ -1,9 +1,8 @@
-use crate::Result;
+use super::{Solution, SolveSystem, Uncertainty};
 use crate::utils::outer_product;
-use super::{SolveSystem, Solution, Uncertainty};
-use ndarray::{s, ArrayView1, ArrayView2, Array1, Array2, Axis, ScalarOperand};
+use crate::Result;
+use ndarray::{s, Array1, Array2, ArrayView1, ArrayView2, Axis, ScalarOperand};
 use ndarray_linalg::{Cholesky, Inverse, Lapack, LeastSquaresSvd, Scalar, UPLO};
-
 
 pub(crate) struct WeightedLeastSquares<'a, E> {
     pub(crate) y: Array1<E>,
@@ -11,10 +10,10 @@ pub(crate) struct WeightedLeastSquares<'a, E> {
     pub(crate) h: Array2<E>,
 }
 
-impl<'a, E: Lapack + Scalar<Real = E> + ScalarOperand> SolveSystem<E> for WeightedLeastSquares<'a, E> {
-    fn solve(
-        &self,
-    ) -> Result<Solution<E>> {
+impl<'a, E: Lapack + Scalar<Real = E> + ScalarOperand> SolveSystem<E>
+    for WeightedLeastSquares<'a, E>
+{
+    fn solve(&self) -> Result<Solution<E>> {
         match self.uncertainty {
             Uncertainty::None => self.solve_unweighted(),
             Uncertainty::Diagonal(uy) => self.solve_weighted(uy),
@@ -22,8 +21,6 @@ impl<'a, E: Lapack + Scalar<Real = E> + ScalarOperand> SolveSystem<E> for Weight
         }
     }
 }
-
-
 
 impl<'a, E: Lapack + Scalar<Real = E> + ScalarOperand> WeightedLeastSquares<'a, E> {
     fn solve_unweighted(&self) -> Result<Solution<E>> {
@@ -42,7 +39,11 @@ impl<'a, E: Lapack + Scalar<Real = E> + ScalarOperand> WeightedLeastSquares<'a, 
 
         let covariance = (lhs.t().dot(&lhs)).inv()? / outer_product(&scaling, &scaling)?;
 
-        Ok(Solution { coeff, dependent_central_values: None, covariance })
+        Ok(Solution {
+            coeff,
+            dependent_central_values: None,
+            covariance,
+        })
     }
 
     fn solve_weighted(&self, uy: ArrayView1<'a, E>) -> Result<Solution<E>> {
@@ -69,7 +70,11 @@ impl<'a, E: Lapack + Scalar<Real = E> + ScalarOperand> WeightedLeastSquares<'a, 
 
         let covariance = (lhs.t().dot(&lhs)).inv()? / outer_product(&scaling, &scaling)?;
 
-        Ok(Solution { coeff, dependent_central_values: None, covariance })
+        Ok(Solution {
+            coeff,
+            dependent_central_values: None,
+            covariance,
+        })
     }
 
     fn solve_full(&self, vy: ArrayView2<'a, E>) -> Result<Solution<E>> {
@@ -81,5 +86,3 @@ impl<'a, E: Lapack + Scalar<Real = E> + ScalarOperand> WeightedLeastSquares<'a, 
         unimplemented!("no impl for full-rank WLS for now.");
     }
 }
-
-

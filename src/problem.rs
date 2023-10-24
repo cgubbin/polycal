@@ -77,13 +77,13 @@ impl<E: Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd> Fit<
     fn q(&self, t: E) -> E {
         let Range { start, end } = self.domain();
         (E::one() + E::one()) / (*end - *start) * self.solution.first_derivative().evaluate(t)
-
     }
 
     pub(crate) fn evaluate_direct_uncertainty(&self, t: E, uncertainty_x: E) -> E {
         let g: Array1<E> = self.solution.basis.polynomials(t).into();
-        (Scalar::powi(self.q(t), 2) * Scalar::powi(uncertainty_x, 2) + g.dot(&self.covariance.dot(&g))).sqrt()
-
+        (Scalar::powi(self.q(t), 2) * Scalar::powi(uncertainty_x, 2)
+            + g.dot(&self.covariance.dot(&g)))
+        .sqrt()
     }
 }
 
@@ -191,34 +191,47 @@ where
 
         let result = match self.uncertainties {
             Covariance::None => WeightedLeastSquares {
-                y: y, uncertainty: Uncertainty::None, h: design_matrix
-            }.solve(),
+                y: y,
+                uncertainty: Uncertainty::None,
+                h: design_matrix,
+            }
+            .solve(),
             Covariance::Uncertainty { ux, uy } if ux.is_none() => WeightedLeastSquares {
-                y: y, uncertainty: Uncertainty::Diagonal(uy), h: design_matrix
-            }.solve(),
+                y: y,
+                uncertainty: Uncertainty::Diagonal(uy),
+                h: design_matrix,
+            }
+            .solve(),
             Covariance::Covariance { vx, vy } if vx.is_none() => WeightedLeastSquares {
-                y: y, uncertainty: Uncertainty::Full(vy), h: design_matrix
-            }.solve(),
+                y: y,
+                uncertainty: Uncertainty::Full(vy),
+                h: design_matrix,
+            }
+            .solve(),
             Covariance::Uncertainty { ux, uy } => TotalLeastSquares {
-                y: y, uncertainty_x: Uncertainty::Diagonal(ux.unwrap()),
-                uncertainty_y: Uncertainty::Diagonal(uy), h: design_matrix,
-            }.solve(),
+                y: y,
+                uncertainty_x: Uncertainty::Diagonal(ux.unwrap()),
+                uncertainty_y: Uncertainty::Diagonal(uy),
+                h: design_matrix,
+            }
+            .solve(),
             Covariance::Covariance { vx, vy } => TotalLeastSquares {
-                y: y, uncertainty_x: Uncertainty::Full(vx.unwrap()),
-                uncertainty_y: Uncertainty::Full(vy), h: design_matrix,
-            }.solve(),
+                y: y,
+                uncertainty_x: Uncertainty::Full(vx.unwrap()),
+                uncertainty_y: Uncertainty::Full(vy),
+                h: design_matrix,
+            }
+            .solve(),
         }?;
 
-        Ok(
-            Fit {
-                solution: ChebyshevBuilder::new(polynomial_degree)
-                    .with_coefficients(result.coeff().to_vec())
-                    .on_domain(self.domain.clone())
-                    .build(),
-                covariance: result.covariance().to_owned(),
-                constraint: self.constraint.clone(),
-            }
-        )
+        Ok(Fit {
+            solution: ChebyshevBuilder::new(polynomial_degree)
+                .with_coefficients(result.coeff().to_vec())
+                .on_domain(self.domain.clone())
+                .build(),
+            covariance: result.covariance().to_owned(),
+            constraint: self.constraint.clone(),
+        })
     }
 
     fn shifted_independent_variable(

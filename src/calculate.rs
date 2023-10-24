@@ -1,19 +1,18 @@
 use argmin::core::ArgminFloat;
 use ndarray::ScalarOperand;
-use ndarray_linalg::{Scalar, Lapack};
+use ndarray_linalg::{Lapack, Scalar};
 use num_traits::float::FloatCore;
 
-use crate::Result;
 use crate::chebyshev::PolynomialSeries;
 use crate::problem::Fit;
 use crate::utils::to_scaled;
+use crate::Result;
 
 #[derive(Copy, Clone, Debug)]
 pub struct Unsure<E> {
     pub(crate) estimate: E,
     pub(crate) standard_uncertainty: E,
 }
-
 
 impl<E: Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd> Fit<E> {
     /// Direct evaluation y = `p_n(x`, a)
@@ -23,13 +22,13 @@ impl<E: Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd> Fit<
 
         let estimate = self.constraint().map_or_else(
             || self.evaluate_direct(t),
-            |constraint| self.evaluate_direct(t) * constraint.multiplicative.evaluate(t) + constraint.additive.evaluate(t)
+            |constraint| {
+                self.evaluate_direct(t) * constraint.multiplicative.evaluate(t)
+                    + constraint.additive.evaluate(t)
+            },
         );
         // Todo: method with constraint
-        let standard_uncertainty = self.evaluate_direct_uncertainty(
-            t,
-            uncertainty_t,
-        );
+        let standard_uncertainty = self.evaluate_direct_uncertainty(t, uncertainty_t);
 
         Unsure {
             estimate,

@@ -27,7 +27,6 @@ pub(crate) trait SolveSystem<E> {
     fn solve(&self) -> Result<Solution<E>>;
 }
 
-
 pub(crate) enum Uncertainty<'a, E> {
     None,
     Diagonal(ArrayView1<'a, E>),
