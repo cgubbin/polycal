@@ -21,11 +21,19 @@ impl<'a, E: Lapack + Scalar<Real = E> + ScalarOperand> SolveSystem<E> for TotalL
 }
 
 impl<'a, E: Lapack + Scalar<Real = E> + ScalarOperand> TotalLeastSquares<'a, E> {
-    fn solve_diagonal(&self, _ux: ArrayView1<'a, E>, _uy: ArrayView1<'a, E>) -> Result<Solution<E>> {
+    fn solve_diagonal(
+        &self,
+        _ux: ArrayView1<'a, E>,
+        _uy: ArrayView1<'a, E>,
+    ) -> Result<Solution<E>> {
         unimplemented!("no diagonal TLS impl");
     }
 
-    fn solve_full_rank(&self, _vx: ArrayView2<'a, E>, _vy: ArrayView2<'a, E>) -> Result<Solution<E>> {
+    fn solve_full_rank(
+        &self,
+        _vx: ArrayView2<'a, E>,
+        _vy: ArrayView2<'a, E>,
+    ) -> Result<Solution<E>> {
         unimplemented!("no full TLS impl");
     }
 }
