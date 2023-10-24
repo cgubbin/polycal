@@ -4,7 +4,7 @@ mod primitive;
 mod series;
 
 use crate::Result;
-pub(crate) use basis::{Basis, ConstrainedPolynomial, Polynomial};
+pub use basis::{Basis, ConstrainedPolynomial, Polynomial};
 
 #[allow(clippy::module_name_repetitions)]
 pub use builder::ChebyshevBuilder;
@@ -12,7 +12,7 @@ use primitive::CSeries;
 pub use series::Series;
 use std::ops::Range;
 
-pub(crate) trait PolynomialSeries<E: PartialOrd>: Clone + Sized {
+pub trait PolynomialSeries<E: PartialOrd>: Clone + Sized {
     fn derivative(&self, count: usize) -> Self {
         match count {
             // zero order just returns the current Series

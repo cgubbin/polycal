@@ -8,7 +8,7 @@ pub struct Rescaled<E> {
     pub(crate) domain: Range<E>,
 }
 
-pub(crate) fn to_scaled<E: Scalar>(x: E, Range { start, end }: &Range<E>) -> E {
+pub fn to_scaled<E: Scalar>(x: E, Range { start, end }: &Range<E>) -> E {
     (x + x - *end - *start) / (*end - *start)
 }
 
@@ -41,7 +41,7 @@ pub fn find_limits<E: Clone + PartialOrd>(variable: &[E]) -> Range<E> {
     Range { start, end }
 }
 
-pub(crate) fn outer_product<T: Scalar>(a: &Array1<T>, b: &Array1<T>) -> Result<Array2<T>> {
+pub fn outer_product<T: Scalar>(a: &Array1<T>, b: &Array1<T>) -> Result<Array2<T>> {
     let a: Array2<T> = a.clone().into_shape((a.len(), 1))?;
     let b: Array2<T> = b.clone().into_shape((1, b.len()))?;
 

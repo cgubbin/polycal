@@ -4,7 +4,7 @@ use crate::Result;
 use ndarray::{s, Array1, Array2, ArrayView1, ArrayView2, Axis, ScalarOperand};
 use ndarray_linalg::{Cholesky, Inverse, Lapack, LeastSquaresSvd, Scalar, UPLO};
 
-pub(crate) struct WeightedLeastSquares<'a, E> {
+pub struct WeightedLeastSquares<'a, E> {
     pub(crate) y: Array1<E>,
     pub(crate) uncertainty: Uncertainty<'a, E>,
     pub(crate) h: Array2<E>,
@@ -78,10 +78,10 @@ impl<'a, E: Lapack + Scalar<Real = E> + ScalarOperand> WeightedLeastSquares<'a, 
     }
 
     fn solve_full(&self, vy: ArrayView2<'a, E>) -> Result<Solution<E>> {
-        let mut lhs = self.h.to_owned();
+        let _lhs = self.h.to_owned();
         let vy = vy.to_owned();
 
-        let lower = vy.cholesky(UPLO::Lower)?;
+        let _lower = vy.cholesky(UPLO::Lower)?;
 
         unimplemented!("no impl for full-rank WLS for now.");
     }

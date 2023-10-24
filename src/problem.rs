@@ -1,8 +1,10 @@
+use argmin::core::ArgminFloat;
 use ndarray::{Array1, Array2, ArrayView1, ArrayView2, ScalarOperand};
 use ndarray_linalg::{Lapack, Scalar};
 use num_traits::float::FloatCore;
 use std::ops::Range;
 
+use crate::calculate::Fit;
 use crate::chebyshev::{
     Basis, ChebyshevBuilder, ConstrainedPolynomial, Polynomial, PolynomialSeries, Series,
 };
@@ -53,40 +55,6 @@ impl<'a, E> Problem<'a, E> {
     }
 }
 
-pub struct Fit<E> {
-    solution: Series<E>,
-    covariance: Array2<E>,
-    constraint: Option<Constraint<E>>,
-}
-
-impl<E> Fit<E> {
-    pub(crate) const fn domain(&self) -> &Range<E> {
-        &self.solution.domain
-    }
-
-    pub(crate) const fn constraint(&self) -> Option<&Constraint<E>> {
-        self.constraint.as_ref()
-    }
-}
-
-impl<E: Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd> Fit<E> {
-    pub(crate) fn evaluate_direct(&self, t: E) -> E {
-        self.solution.evaluate(t)
-    }
-
-    fn q(&self, t: E) -> E {
-        let Range { start, end } = self.domain();
-        (E::one() + E::one()) / (*end - *start) * self.solution.first_derivative().evaluate(t)
-    }
-
-    pub(crate) fn evaluate_direct_uncertainty(&self, t: E, uncertainty_x: E) -> E {
-        let g: Array1<E> = self.solution.basis.polynomials(t).into();
-        (Scalar::powi(self.q(t), 2) * Scalar::powi(uncertainty_x, 2)
-            + g.dot(&self.covariance.dot(&g)))
-        .sqrt()
-    }
-}
-
 impl<'a, E> Problem<'a, E>
 where
     E: Scalar<Real = E> + PartialOrd + ScalarOperand + Lapack + FloatCore,
@@ -94,7 +62,7 @@ where
     fn solve(&self, n_max: usize) -> Fit<E> {
         let fits = (1..n_max)
             .filter_map(|polynomial_degree| match self.fit(polynomial_degree) {
-                Ok(fit) => match self.check_is_monotonic(&fit.solution) {
+                Ok(fit) => match self.check_is_monotonic(fit.solution()) {
                     Ok(true) => Some(fit),
                     Ok(false) => {
                         eprintln!("found non-monotonic solution");
@@ -122,7 +90,7 @@ where
     fn find_best_fit(&self, mut fits: Vec<Fit<E>>) -> (E, Fit<E>) {
         let scores = fits
             .iter()
-            .map(|fit| self.score(&fit.solution))
+            .map(|fit| self.score(fit.solution()))
             .collect::<Vec<_>>();
         let diffs = scores
             .windows(2)
@@ -191,32 +159,32 @@ where
 
         let result = match self.uncertainties {
             Covariance::None => WeightedLeastSquares {
-                y: y,
+                y,
                 uncertainty: Uncertainty::None,
                 h: design_matrix,
             }
             .solve(),
             Covariance::Uncertainty { ux, uy } if ux.is_none() => WeightedLeastSquares {
-                y: y,
+                y,
                 uncertainty: Uncertainty::Diagonal(uy),
                 h: design_matrix,
             }
             .solve(),
             Covariance::Covariance { vx, vy } if vx.is_none() => WeightedLeastSquares {
-                y: y,
+                y,
                 uncertainty: Uncertainty::Full(vy),
                 h: design_matrix,
             }
             .solve(),
             Covariance::Uncertainty { ux, uy } => TotalLeastSquares {
-                y: y,
+                y,
                 uncertainty_x: Uncertainty::Diagonal(ux.unwrap()),
                 uncertainty_y: Uncertainty::Diagonal(uy),
                 h: design_matrix,
             }
             .solve(),
             Covariance::Covariance { vx, vy } => TotalLeastSquares {
-                y: y,
+                y,
                 uncertainty_x: Uncertainty::Full(vx.unwrap()),
                 uncertainty_y: Uncertainty::Full(vy),
                 h: design_matrix,
@@ -238,7 +206,7 @@ where
         &self,
         Constraint {
             additive,
-            multiplicative,
+            multiplicative: _,
         }: &Constraint<E>,
     ) -> Array1<E> {
         self.y
