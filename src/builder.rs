@@ -8,10 +8,10 @@ use crate::problem::{Constraint, Covariance, Problem, ScoringStrategy};
 use crate::utils::{form_rescaled_variables, Rescaled};
 
 #[derive(Default)]
-pub(crate) struct Set {}
+pub struct Set {}
 
 #[derive(Default)]
-pub(crate) struct Unset {}
+pub struct Unset {}
 
 pub struct ProblemBuilder<'a, E, DU, IU, DC, IC, C> {
     dependent: ArrayView1<'a, E>,
@@ -201,7 +201,10 @@ impl<'a, E, C> ProblemBuilder<'a, E, Unset, Unset, Set, Unset, C> {
 }
 
 impl<'a, E, DU, IU, DC, IC> ProblemBuilder<'a, E, DU, IU, DC, IC, Unset> {
-    pub const fn with_constraint<C>(self, constraint: C) -> ProblemBuilder<'a, E, DU, IU, DC, IC, C> {
+    pub const fn with_constraint<C>(
+        self,
+        constraint: C,
+    ) -> ProblemBuilder<'a, E, DU, IU, DC, IC, C> {
         ProblemBuilder {
             dependent: self.dependent,
             independent: self.independent,
@@ -246,7 +249,7 @@ impl<'a, E: PartialOrd + Scalar> ProblemBuilder<'a, E, Unset, Set, Unset, Unset,
             uncertainties: Covariance::Uncertainty {
                 ux: None,
                 uy: self.independent_uncertainty.unwrap(), // This is safe as the typestate ensure
-                // it is some
+                                                           // it is some
             },
             domain,
             strategy: self.strategy,

@@ -54,7 +54,7 @@ pub fn outer_product<T: Scalar>(a: &Array1<T>, b: &Array1<T>) -> Result<Array2<T
 
 #[cfg(test)]
 mod test {
-    use ndarray_rand::rand::{SeedableRng, Rng};
+    use ndarray_rand::rand::{Rng, SeedableRng};
     use rand_isaac::Isaac64Rng;
     use std::ops::Range;
 
@@ -66,7 +66,7 @@ mod test {
         let mut rng = Isaac64Rng::seed_from_u64(state);
 
         let start: f64 = rng.gen();
-        let end = rng.gen_range((2.*start)..(10.*start));
+        let end = rng.gen_range((2. * start)..(10. * start));
 
         let domain = Range { start, end };
 

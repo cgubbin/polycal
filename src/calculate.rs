@@ -7,7 +7,10 @@ use argmin::{
 };
 use ndarray::{Array1, Array2, ScalarOperand};
 use ndarray_linalg::{Lapack, Scalar};
-use ndarray_rand::{rand::SeedableRng, rand_distr::{Uniform, uniform::SampleUniform, Distribution}};
+use ndarray_rand::{
+    rand::SeedableRng,
+    rand_distr::{uniform::SampleUniform, Distribution, Uniform},
+};
 use num_traits::float::FloatCore;
 use rand_isaac::Isaac64Rng;
 use std::ops::Range;
@@ -200,10 +203,8 @@ impl<'a, E: ArgminFloat + Scalar<Real = E> + ScalarOperand + Lapack + FloatCore 
         &self,
         param: &Self::Param,
     ) -> ::std::result::Result<Self::Gradient, argmin::core::Error> {
-        Ok(
-            self.series().derivative(1).evaluate(*param)
-                * FloatCore::signum(self.series().evaluate(*param) - self.y0)
-        )
+        Ok(self.series().derivative(1).evaluate(*param)
+            * FloatCore::signum(self.series().evaluate(*param) - self.y0))
     }
 }
 
@@ -217,10 +218,8 @@ impl<'a, E: ArgminFloat + Scalar<Real = E> + ScalarOperand + Lapack + FloatCore 
         &self,
         param: &Self::Param,
     ) -> ::std::result::Result<Self::Hessian, argmin::core::Error> {
-        Ok(
-            self.series().derivative(2).evaluate(*param)
-                * FloatCore::signum(self.series().evaluate(*param) - self.y0)
-        )
+        Ok(self.series().derivative(2).evaluate(*param)
+            * FloatCore::signum(self.series().evaluate(*param) - self.y0))
     }
 }
 
@@ -246,13 +245,15 @@ where
         let state = 40;
         let mut rng = Isaac64Rng::seed_from_u64(state);
         let dist = Uniform::from(-E::one()..E::one());
-        let target_domain = Range { start: - E::one(), end: E::one() };
+        let target_domain = Range {
+            start: -E::one(),
+            end: E::one(),
+        };
 
         let mut param_in_domain = None;
         let ii = 0;
 
         loop {
-
             let init_param = if ii == 1 {
                 initial.map_or_else(|| dist.sample(&mut rng), |initial| initial)
             } else {
@@ -275,14 +276,15 @@ where
             match Executor::new(cost, solver)
                 .configure(|state| state.param(init_param).max_iters(50))
                 .add_observer(SlogLogger::term(), ObserverMode::Never)
-                .run() {
+                .run()
+            {
                 Ok(res) => {
                     let mut state = res.state().clone();
                     let param = state.take_param().unwrap();
 
                     if target_domain.contains(&param) {
                         param_in_domain = Some(param);
-                        break
+                        break;
                     }
                 }
                 Err(err) => tracing::warn!("error in minimisation {err:?}"),
@@ -295,31 +297,42 @@ where
 
 #[cfg(test)]
 mod test {
-    use ndarray::{Array1, ScalarOperand, Array2};
-    use ndarray_linalg::{Scalar, Lapack};
-    use ndarray_rand::{rand::{SeedableRng, Rng}, rand_distr::{Distribution, Standard}};
+    use ndarray::{Array1, Array2, ScalarOperand};
+    use ndarray_linalg::{Lapack, Scalar};
+    use ndarray_rand::{
+        rand::{Rng, SeedableRng},
+        rand_distr::{Distribution, Standard},
+    };
     use num_traits::float::FloatCore;
     use rand_isaac::Isaac64Rng;
     use std::ops::Range;
 
-    use crate::chebyshev::{PolynomialSeries, Series};
     use super::{Fit, Unsure};
+    use crate::chebyshev::{PolynomialSeries, Series};
 
-    pub(crate) fn generate_data<E>(rng: &mut impl Rng, Range{ start, end }: Range<E>, num_points: usize, degree: usize) -> (Array1<E>, Array1<E>, Series<E>)
+    pub fn generate_data<E>(
+        rng: &mut impl Rng,
+        Range { start, end }: Range<E>,
+        num_points: usize,
+        degree: usize,
+    ) -> (Array1<E>, Array1<E>, Series<E>)
     where
         E: Scalar<Real = E> + ScalarOperand + PartialOrd + Lapack + FloatCore,
         Standard: Distribution<E>,
     {
         let chebyshev_coeffs = (0..=degree).map(|_| rng.gen()).collect::<Vec<_>>();
 
-        let x = (0..num_points).map(|m| start + E::from(m).unwrap() * (end - start) / (E::from(num_points).unwrap() - E::one())).collect::<Array1<_>>();
+        let x = (0..num_points)
+            .map(|m| {
+                start
+                    + E::from(m).unwrap() * (end - start)
+                        / (E::from(num_points).unwrap() - E::one())
+            })
+            .collect::<Array1<_>>();
 
         let series = Series::from_coeff(chebyshev_coeffs, x.as_slice().unwrap());
 
-        let y = x
-            .iter()
-            .map(|x| series.evaluate(*x))
-            .collect::<Array1<E>>();
+        let y = x.iter().map(|x| series.evaluate(*x)).collect::<Array1<E>>();
 
         (x, y, series)
     }
@@ -330,8 +343,10 @@ mod test {
         let mut rng = Isaac64Rng::seed_from_u64(state);
         let degree = 1;
         let number_of_data_points = rng.gen_range(50..100);
-        let domain = Range { start: -1., end: 1. };
-
+        let domain = Range {
+            start: -1.,
+            end: 1.,
+        };
 
         let (x, y, series) = generate_data(&mut rng, domain, number_of_data_points, degree);
         let covariance = Array2::zeros((degree + 1, degree + 1));
@@ -339,12 +354,15 @@ mod test {
         let fit = Fit {
             solution: series,
             covariance,
-            constraint: None
+            constraint: None,
         };
 
         for (ii, x) in x.into_iter().enumerate() {
             let expected = y[ii];
-            let calculated = fit.response( Unsure { estimate: x, standard_uncertainty: 0.0 });
+            let calculated = fit.response(Unsure {
+                estimate: x,
+                standard_uncertainty: 0.0,
+            });
 
             approx::assert_relative_eq!(expected, calculated.estimate, max_relative = 1e-7);
         }
@@ -356,8 +374,10 @@ mod test {
         let mut rng = Isaac64Rng::seed_from_u64(state);
         let degree = 1;
         let number_of_data_points = rng.gen_range(50..100);
-        let domain = Range { start: -1., end: 1. };
-
+        let domain = Range {
+            start: -1.,
+            end: 1.,
+        };
 
         let (x, y, series) = generate_data(&mut rng, domain, number_of_data_points, degree);
         let covariance = Array2::zeros((degree + 1, degree + 1));
@@ -365,12 +385,19 @@ mod test {
         let fit = Fit {
             solution: series,
             covariance,
-            constraint: None
+            constraint: None,
         };
 
         for (ii, y) in y.into_iter().enumerate() {
             let expected = x[ii];
-            let calculated = fit.stimulus( Unsure { estimate: y, standard_uncertainty: 0.0 }, None)
+            let calculated = fit
+                .stimulus(
+                    Unsure {
+                        estimate: y,
+                        standard_uncertainty: 0.0,
+                    },
+                    None,
+                )
                 .expect("failed to solve the minimisation problem");
             if expected == 0.0 {
                 approx::assert_relative_eq!(expected, calculated.estimate, epsilon = 1e-5);
@@ -386,8 +413,10 @@ mod test {
         let mut rng = Isaac64Rng::seed_from_u64(state);
         let degree = 5;
         let number_of_data_points = rng.gen_range(50..100);
-        let domain = Range { start: -1., end: 1. };
-
+        let domain = Range {
+            start: -1.,
+            end: 1.,
+        };
 
         let (x, y, series) = generate_data(&mut rng, domain, number_of_data_points, degree);
         let covariance = Array2::zeros((degree + 1, degree + 1));
@@ -395,12 +424,15 @@ mod test {
         let fit = Fit {
             solution: series,
             covariance,
-            constraint: None
+            constraint: None,
         };
 
         for (ii, x) in x.into_iter().enumerate() {
             let expected = y[ii];
-            let calculated = fit.response( Unsure { estimate: x, standard_uncertainty: 0.0 });
+            let calculated = fit.response(Unsure {
+                estimate: x,
+                standard_uncertainty: 0.0,
+            });
 
             approx::assert_relative_eq!(expected, calculated.estimate, max_relative = 1e-7);
         }
@@ -412,22 +444,27 @@ mod test {
         let mut rng = Isaac64Rng::seed_from_u64(state);
         let degree = 2;
         let number_of_data_points = rng.gen_range(50..100);
-        let domain = Range { start: -1., end: 1. };
+        let domain = Range {
+            start: -1.,
+            end: 1.,
+        };
         let mut monotonic_series = None;
         let mut monotonic_x = None;
         let mut monotonic_y = None;
 
         // We need a monotonic training function
         loop {
-            let (x, y, series) = generate_data(&mut rng, domain.clone(), number_of_data_points, degree);
+            let (x, y, series) =
+                generate_data(&mut rng, domain.clone(), number_of_data_points, degree);
 
-            if series.is_monotonic()
+            if series
+                .is_monotonic()
                 .expect("failure in monotonicity check")
             {
                 monotonic_series = Some(series);
                 monotonic_x = Some(x);
                 monotonic_y = Some(y);
-                break
+                break;
             }
         }
 
@@ -439,12 +476,19 @@ mod test {
         let fit = Fit {
             solution: series,
             covariance,
-            constraint: None
+            constraint: None,
         };
 
         for (ii, y) in y.into_iter().enumerate() {
             let expected = x[ii];
-            let calculated = fit.stimulus( Unsure { estimate: y, standard_uncertainty: 0.0 }, None)
+            let calculated = fit
+                .stimulus(
+                    Unsure {
+                        estimate: y,
+                        standard_uncertainty: 0.0,
+                    },
+                    None,
+                )
                 .expect("failed to solve the minimisation problem");
 
             if expected == 0.0 {
@@ -461,22 +505,27 @@ mod test {
         let mut rng = Isaac64Rng::seed_from_u64(state);
         let degree = 5;
         let number_of_data_points = rng.gen_range(50..100);
-        let domain = Range { start: -1., end: 1. };
+        let domain = Range {
+            start: -1.,
+            end: 1.,
+        };
         let mut monotonic_series = None;
         let mut monotonic_x = None;
         let mut monotonic_y = None;
 
         // We need a monotonic training function
         loop {
-            let (x, y, series) = generate_data(&mut rng, domain.clone(), number_of_data_points, degree);
+            let (x, y, series) =
+                generate_data(&mut rng, domain.clone(), number_of_data_points, degree);
 
-            if series.is_monotonic()
+            if series
+                .is_monotonic()
                 .expect("failure in monotonicity check")
             {
                 monotonic_series = Some(series);
                 monotonic_x = Some(x);
                 monotonic_y = Some(y);
-                break
+                break;
             }
         }
 
@@ -488,12 +537,19 @@ mod test {
         let fit = Fit {
             solution: series,
             covariance,
-            constraint: None
+            constraint: None,
         };
 
         for (ii, y) in y.into_iter().enumerate() {
             let expected = x[ii];
-            let calculated = fit.stimulus( Unsure { estimate: y, standard_uncertainty: 0.0 }, None)
+            let calculated = fit
+                .stimulus(
+                    Unsure {
+                        estimate: y,
+                        standard_uncertainty: 0.0,
+                    },
+                    None,
+                )
                 .expect("failed to solve the minimisation problem");
 
             if expected == 0.0 {

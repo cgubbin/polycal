@@ -93,12 +93,15 @@ impl<'a, E: Lapack + Scalar<Real = E> + ScalarOperand> WeightedLeastSquares<'a, 
 
 #[cfg(test)]
 mod test {
-    use ndarray::{ScalarOperand, Array1, ArrayView1};
-    use ndarray_rand::{rand::{Rng, SeedableRng}, rand_distr::{Standard, Distribution, Normal, StandardNormal}};
+    use ndarray::{Array1, ArrayView1, ScalarOperand};
+    use ndarray_linalg::{Lapack, Scalar};
+    use ndarray_rand::{
+        rand::{Rng, SeedableRng},
+        rand_distr::{Distribution, Normal, Standard, StandardNormal},
+    };
     use num_traits::{float::FloatCore, Float};
     use rand_isaac::Isaac64Rng;
     use std::ops::Range;
-    use ndarray_linalg::{Scalar, Lapack};
 
     use super::WeightedLeastSquares;
     use crate::builder::ProblemBuilder;
@@ -112,34 +115,50 @@ mod test {
             Self {
                 coeff: coeff.into(),
                 domain,
-                window: Range { start: -E::one(), end: E::one() },
+                window: Range {
+                    start: -E::one(),
+                    end: E::one(),
+                },
                 basis: Basis::new(degree),
             }
         }
     }
 
-    pub(crate) fn generate_data<E>(rng: &mut impl Rng, Range{ start, end }: Range<E>, num_points: usize, degree: usize) -> (Array1<E>, Array1<E>, Series<E>)
+    pub fn generate_data<E>(
+        rng: &mut impl Rng,
+        Range { start, end }: Range<E>,
+        num_points: usize,
+        degree: usize,
+    ) -> (Array1<E>, Array1<E>, Series<E>)
     where
         E: Scalar<Real = E> + ScalarOperand + PartialOrd + Lapack + FloatCore,
         Standard: Distribution<E>,
     {
         let chebyshev_coeffs = (0..=degree).map(|_| rng.gen()).collect::<Vec<_>>();
 
-        let x = (0..num_points).map(|m| start + E::from(m).unwrap() * (end - start) / (E::from(num_points).unwrap() - E::one())).collect::<Array1<_>>();
+        let x = (0..num_points)
+            .map(|m| {
+                start
+                    + E::from(m).unwrap() * (end - start)
+                        / (E::from(num_points).unwrap() - E::one())
+            })
+            .collect::<Array1<_>>();
 
         let series = Series::from_coeff(chebyshev_coeffs, x.as_slice().unwrap());
 
-        let y = x
-            .iter()
-            .map(|x| series.evaluate(*x))
-            .collect::<Array1<E>>();
+        let y = x.iter().map(|x| series.evaluate(*x)).collect::<Array1<E>>();
 
         (x, y, series)
     }
 
-    fn wls<'a, E>(x: ArrayView1<'a, E>, y: ArrayView1<'a, E>, uncertainty: &Uncertainty<'a, E>, degree: usize) -> WeightedLeastSquares<'a, E>
+    fn wls<'a, E>(
+        x: ArrayView1<'a, E>,
+        y: ArrayView1<'a, E>,
+        uncertainty: &Uncertainty<'a, E>,
+        degree: usize,
+    ) -> WeightedLeastSquares<'a, E>
     where
-            E: PartialOrd + Scalar<Real = E> + ScalarOperand + Lapack + FloatCore,
+        E: PartialOrd + Scalar<Real = E> + ScalarOperand + Lapack + FloatCore,
     {
         let builder = ProblemBuilder::new(x, y);
         let problem = match &uncertainty {
@@ -150,7 +169,11 @@ mod test {
 
         let h = problem.design_matrix(degree).unwrap();
 
-        WeightedLeastSquares { y: y.to_owned(), h, uncertainty: uncertainty.clone()}
+        WeightedLeastSquares {
+            y: y.to_owned(),
+            h,
+            uncertainty: uncertainty.clone(),
+        }
     }
 
     fn generate_test_data<E>(degree: usize) -> (Vec<E>, Vec<E>)
@@ -162,7 +185,10 @@ mod test {
         let mut rng = Isaac64Rng::seed_from_u64(state);
         let number_of_data_points = rng.gen_range(50..100);
 
-        let domain = Range { start: -E::one(), end: E::one() };
+        let domain = Range {
+            start: -E::one(),
+            end: E::one(),
+        };
         let (x, y, series) = generate_data(&mut rng, domain, number_of_data_points, degree);
 
         let wls: WeightedLeastSquares<'_, E> = wls(x.view(), y.view(), &Uncertainty::None, degree);
@@ -172,7 +198,10 @@ mod test {
         (series.coeff(), result.coeff().to_vec())
     }
 
-    fn generate_diagonal_test_data<E>(degree: usize, max_noise_fraction: E) -> (Vec<E>, Vec<E>, Vec<E>)
+    fn generate_diagonal_test_data<E>(
+        degree: usize,
+        max_noise_fraction: E,
+    ) -> (Vec<E>, Vec<E>, Vec<E>)
     where
         E: Scalar<Real = E> + ScalarOperand + PartialOrd + Lapack + FloatCore + Float,
         Standard: Distribution<E>,
@@ -182,26 +211,41 @@ mod test {
         let mut rng = Isaac64Rng::seed_from_u64(state);
         let number_of_data_points = rng.gen_range(50..100);
 
-        let domain = Range { start: -E::one(), end: E::one() };
+        let domain = Range {
+            start: -E::one(),
+            end: E::one(),
+        };
         let (x, y_central, series) = generate_data(&mut rng, domain, number_of_data_points, degree);
 
-        let standard_deviation = y_central.iter().map(|_| {
-            max_noise_fraction
-        }).collect::<Array1<E>>();
+        let standard_deviation = y_central
+            .iter()
+            .map(|_| max_noise_fraction)
+            .collect::<Array1<E>>();
 
-        let y = y_central.iter().zip(standard_deviation.iter()).map(|(y, standard_deviation)| {
-            let noise_dist = Normal::new(*y, *standard_deviation).unwrap();
-            noise_dist.sample(&mut rng)
-        }).collect::<Array1<E>>();
+        let y = y_central
+            .iter()
+            .zip(standard_deviation.iter())
+            .map(|(y, standard_deviation)| {
+                let noise_dist = Normal::new(*y, *standard_deviation).unwrap();
+                noise_dist.sample(&mut rng)
+            })
+            .collect::<Array1<E>>();
 
-        let wls: WeightedLeastSquares<'_, E> = wls(x.view(), y.view(), &Uncertainty::Diagonal(standard_deviation.view()), degree);
-
+        let wls: WeightedLeastSquares<'_, E> = wls(
+            x.view(),
+            y.view(),
+            &Uncertainty::Diagonal(standard_deviation.view()),
+            degree,
+        );
 
         let result = wls.solve().unwrap();
 
-        (series.coeff(), result.coeff().to_vec(), result.covariance.diag().to_vec())
+        (
+            series.coeff(),
+            result.coeff().to_vec(),
+            result.covariance.diag().to_vec(),
+        )
     }
-
 
     #[test]
     fn weighted_least_squares_works_for_linear_fit_with_no_uncertainties() {
@@ -220,7 +264,6 @@ mod test {
             approx::assert_relative_eq!(exp, cal, max_relative = 1e-7);
         }
     }
-
 
     #[test]
     fn weighted_least_squares_works_for_degree_three_fit_with_no_uncertainties() {
@@ -265,7 +308,8 @@ mod test {
     fn weighted_least_squares_works_for_linear_fit_with_diagonal_uncertainties() {
         let degree = 1;
         let max_noise_sd_fractional = 0.01;
-        let (expected, calculated, variance) = generate_diagonal_test_data::<f64>(degree, max_noise_sd_fractional);
+        let (expected, calculated, variance) =
+            generate_diagonal_test_data::<f64>(degree, max_noise_sd_fractional);
         for ((exp, cal), var) in expected.into_iter().zip(calculated).zip(variance) {
             assert!((exp - cal).abs() < 3. * var.sqrt());
         }
@@ -275,7 +319,8 @@ mod test {
     fn weighted_least_squares_works_for_degree_two_fit_with_diagonal_uncertainties() {
         let degree = 2;
         let max_noise_sd_fractional = 0.01;
-        let (expected, calculated, variance) = generate_diagonal_test_data::<f64>(degree, max_noise_sd_fractional);
+        let (expected, calculated, variance) =
+            generate_diagonal_test_data::<f64>(degree, max_noise_sd_fractional);
         for ((exp, cal), var) in expected.into_iter().zip(calculated).zip(variance) {
             assert!((exp - cal).abs() < 3. * var.sqrt());
         }
@@ -285,7 +330,8 @@ mod test {
     fn weighted_least_squares_works_for_degree_three_fit_with_diagonal_uncertainties() {
         let degree = 3;
         let max_noise_sd_fractional = 0.01;
-        let (expected, calculated, variance) = generate_diagonal_test_data::<f64>(degree, max_noise_sd_fractional);
+        let (expected, calculated, variance) =
+            generate_diagonal_test_data::<f64>(degree, max_noise_sd_fractional);
         for ((exp, cal), var) in expected.into_iter().zip(calculated).zip(variance) {
             assert!((exp - cal).abs() < 3. * var.sqrt());
         }
@@ -295,7 +341,8 @@ mod test {
     fn weighted_least_squares_works_for_degree_four_fit_with_diagonal_uncertainties() {
         let degree = 4;
         let max_noise_sd_fractional = 0.01;
-        let (expected, calculated, variance) = generate_diagonal_test_data::<f64>(degree, max_noise_sd_fractional);
+        let (expected, calculated, variance) =
+            generate_diagonal_test_data::<f64>(degree, max_noise_sd_fractional);
         for ((exp, cal), var) in expected.into_iter().zip(calculated).zip(variance) {
             assert!((exp - cal).abs() < 3. * var.sqrt());
         }
@@ -305,7 +352,8 @@ mod test {
     fn weighted_least_squares_works_for_degree_five_fit_with_diagonal_uncertainties() {
         let degree = 5;
         let max_noise_sd_fractional = 0.01;
-        let (expected, calculated, variance) = generate_diagonal_test_data::<f64>(degree, max_noise_sd_fractional);
+        let (expected, calculated, variance) =
+            generate_diagonal_test_data::<f64>(degree, max_noise_sd_fractional);
         for ((exp, cal), var) in expected.into_iter().zip(calculated).zip(variance) {
             assert!((exp - cal).abs() < 3. * var.sqrt());
         }
@@ -315,7 +363,8 @@ mod test {
     fn weighted_least_squares_works_for_degree_six_fit_with_diagonal_uncertainties() {
         let degree = 6;
         let max_noise_sd_fractional = 0.01;
-        let (expected, calculated, variance) = generate_diagonal_test_data::<f64>(degree, max_noise_sd_fractional);
+        let (expected, calculated, variance) =
+            generate_diagonal_test_data::<f64>(degree, max_noise_sd_fractional);
         for ((exp, cal), var) in expected.into_iter().zip(calculated).zip(variance) {
             assert!((exp - cal).abs() < 3. * var.sqrt());
         }
