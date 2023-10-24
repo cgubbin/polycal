@@ -23,8 +23,8 @@ pub struct Fit<E> {
 
 #[derive(Copy, Clone, Debug)]
 pub struct Unsure<E> {
-    pub(crate) estimate: E,
-    pub(crate) standard_uncertainty: E,
+    pub estimate: E,
+    pub standard_uncertainty: E,
 }
 
 impl<E: Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd> Fit<E> {
@@ -62,7 +62,7 @@ where
         + argmin_math::ArgminDot<E, E>,
 {
     /// Inverse evaluation y - `p_n(x`, a) = 0
-    fn stimulus(&self, response: Unsure<E>) -> Result<Unsure<E>> {
+    pub fn stimulus(&self, response: Unsure<E>) -> Result<Unsure<E>> {
         let estimate = self.evaluate_inverse(response.estimate)?;
 
         // Todo: method with constraint

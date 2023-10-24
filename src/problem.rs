@@ -1,4 +1,3 @@
-use argmin::core::ArgminFloat;
 use ndarray::{Array1, Array2, ArrayView1, ArrayView2, ScalarOperand};
 use ndarray_linalg::{Lapack, Scalar};
 use num_traits::float::FloatCore;
@@ -59,7 +58,7 @@ impl<'a, E> Problem<'a, E>
 where
     E: Scalar<Real = E> + PartialOrd + ScalarOperand + Lapack + FloatCore,
 {
-    fn solve(&self, n_max: usize) -> Fit<E> {
+    pub fn solve(&self, n_max: usize) -> Result<Fit<E>> {
         let fits = (1..n_max)
             .filter_map(|polynomial_degree| match self.fit(polynomial_degree) {
                 Ok(fit) => match self.check_is_monotonic(fit.solution()) {
@@ -84,7 +83,7 @@ where
 
         // TODO: Chi-2 validation at nu = m - n - 1
 
-        best_fit
+        Ok(best_fit)
     }
 
     fn find_best_fit(&self, mut fits: Vec<Fit<E>>) -> (E, Fit<E>) {

@@ -13,7 +13,7 @@ struct Set {}
 #[derive(Default)]
 struct Unset {}
 
-struct ProblemBuilder<'a, E, DU, IU, DC, IC, C> {
+pub struct ProblemBuilder<'a, E, DU, IU, DC, IC, C> {
     dependent: ArrayView1<'a, E>,
     independent: ArrayView1<'a, E>,
     dependent_uncertainty: Option<ArrayView1<'a, E>>,
@@ -26,7 +26,7 @@ struct ProblemBuilder<'a, E, DU, IU, DC, IC, C> {
 }
 
 impl<'a, E> ProblemBuilder<'a, E, Unset, Unset, Unset, Unset, Unset> {
-    fn new<V: Into<ArrayView1<'a, E>>>(independent: V, dependent: V) -> Self {
+    pub fn new<V: Into<ArrayView1<'a, E>>>(independent: V, dependent: V) -> Self {
         Self {
             dependent: dependent.into(),
             independent: independent.into(),
@@ -42,7 +42,7 @@ impl<'a, E> ProblemBuilder<'a, E, Unset, Unset, Unset, Unset, Unset> {
 }
 
 impl<'a, E, DU, IU, DC, IC, C> ProblemBuilder<'a, E, DU, IU, DC, IC, C> {
-    const fn with_scoring_strategy(mut self, scoring_strategy: ScoringStrategy) -> Self {
+    pub const fn with_scoring_strategy(mut self, scoring_strategy: ScoringStrategy) -> Self {
         self.strategy = scoring_strategy;
         self
     }
@@ -87,7 +87,7 @@ impl<'a, E, C> ProblemBuilder<'a, E, Unset, Set, Unset, Unset, C> {
 }
 
 impl<'a, E, C> ProblemBuilder<'a, E, Unset, Unset, Unset, Unset, C> {
-    fn with_independent_uncertainty(
+    pub fn with_independent_uncertainty(
         self,
         independent_uncertainty: impl Into<ArrayView1<'a, E>>,
     ) -> ProblemBuilder<'a, E, Unset, Set, Unset, Unset, C> {
@@ -106,7 +106,7 @@ impl<'a, E, C> ProblemBuilder<'a, E, Unset, Unset, Unset, Unset, C> {
 }
 
 impl<'a, E, C> ProblemBuilder<'a, E, Set, Unset, Unset, Unset, C> {
-    fn with_independent_uncertainty(
+    pub fn with_independent_uncertainty(
         self,
         independent_uncertainty: impl Into<ArrayView1<'a, E>>,
     ) -> ProblemBuilder<'a, E, Set, Set, Unset, Unset, C> {
@@ -201,7 +201,7 @@ impl<'a, E, C> ProblemBuilder<'a, E, Unset, Unset, Set, Unset, C> {
 }
 
 impl<'a, E, DU, IU, DC, IC> ProblemBuilder<'a, E, DU, IU, DC, IC, Unset> {
-    const fn with_constraint<C>(self, constraint: C) -> ProblemBuilder<'a, E, DU, IU, DC, IC, C> {
+    pub const fn with_constraint<C>(self, constraint: C) -> ProblemBuilder<'a, E, DU, IU, DC, IC, C> {
         ProblemBuilder {
             dependent: self.dependent,
             independent: self.independent,
@@ -217,7 +217,8 @@ impl<'a, E, DU, IU, DC, IC> ProblemBuilder<'a, E, DU, IU, DC, IC, Unset> {
 }
 
 impl<'a, E: PartialOrd + Scalar> ProblemBuilder<'a, E, Unset, Unset, Unset, Unset, Unset> {
-    fn build(self) -> Problem<'a, E> {
+    #[must_use]
+    pub fn build(self) -> Problem<'a, E> {
         let Rescaled { t, domain } = form_rescaled_variables(self.independent);
         Problem {
             t,
@@ -231,7 +232,12 @@ impl<'a, E: PartialOrd + Scalar> ProblemBuilder<'a, E, Unset, Unset, Unset, Unse
 }
 
 impl<'a, E: PartialOrd + Scalar> ProblemBuilder<'a, E, Unset, Set, Unset, Unset, Unset> {
-    fn build(self) -> Problem<'a, E> {
+    #[must_use]
+    /// Build a problem
+    ///
+    /// # Panics
+    /// Should not panic, the typestate ensures the `unwrap` is Ok
+    pub fn build(self) -> Problem<'a, E> {
         let Rescaled { t, domain } = form_rescaled_variables(self.independent);
 
         Problem {
@@ -239,7 +245,8 @@ impl<'a, E: PartialOrd + Scalar> ProblemBuilder<'a, E, Unset, Set, Unset, Unset,
             y: self.dependent,
             uncertainties: Covariance::Uncertainty {
                 ux: None,
-                uy: self.independent_uncertainty.unwrap(),
+                uy: self.independent_uncertainty.unwrap(), // This is safe as the typestate ensure
+                // it is some
             },
             domain,
             strategy: self.strategy,
