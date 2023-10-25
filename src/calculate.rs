@@ -204,28 +204,51 @@ impl<E: Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd> Fit<
     }
 }
 
-struct InverseProblem<'a, E> {
+struct InverseProblem<E> {
+    problem: Series<E>,
+    y0: E,
+}
+
+struct InverseProblemBuilder<'a, E> {
     problem: &'a Series<E>,
     y0: E,
     constraint: Option<&'a Constraint<E>>,
 }
 
-impl<'a, E: ArgminFloat + Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd>
-    InverseProblem<'a, E>
+impl<'a, E> InverseProblemBuilder<'a, E>
+where
+    E: Scalar<Real = E>,
 {
-    fn series(&self) -> Series<E> {
-        self.constraint.map_or_else(
-            || self.problem.clone(),
-            |Constraint {
-                 multiplicative,
-                 additive,
-             }| self.problem.clone() * multiplicative.clone() + additive.clone(),
-        )
+    fn new(y0: E, problem: &'a Series<E>) -> Self {
+        Self {
+            y0,
+            problem,
+            constraint: None,
+        }
+    }
+
+    fn with_constraint(mut self, constraint: Option<&'a Constraint<E>>) -> Self {
+        self.constraint = constraint;
+        self
+    }
+
+    fn build(self) -> InverseProblem<E> {
+        InverseProblem {
+            problem: self.constraint.map_or_else(
+                || self.problem.clone(),
+                |Constraint {
+                     multiplicative,
+                     additive,
+                 }| self.problem.clone() * multiplicative.clone() + additive.clone(),
+                ),
+            y0: self.y0
+        }
     }
 }
 
-impl<'a, E: ArgminFloat + Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd>
-    CostFunction for InverseProblem<'a, E>
+
+impl<E: ArgminFloat + Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd>
+    CostFunction for InverseProblem<E>
 {
     type Param = E;
     type Output = E;
@@ -234,12 +257,12 @@ impl<'a, E: ArgminFloat + Scalar<Real = E> + ScalarOperand + Lapack + FloatCore 
         &self,
         param: &Self::Param,
     ) -> ::std::result::Result<Self::Output, argmin::core::Error> {
-        Ok(Scalar::abs(self.series().evaluate(*param) - self.y0))
+        Ok(Scalar::abs(self.problem.evaluate(*param) - self.y0))
     }
 }
 
-impl<'a, E: ArgminFloat + Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd>
-    Gradient for InverseProblem<'a, E>
+impl<E: ArgminFloat + Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd>
+    Gradient for InverseProblem<E>
 {
     type Param = E;
     type Gradient = E;
@@ -248,13 +271,13 @@ impl<'a, E: ArgminFloat + Scalar<Real = E> + ScalarOperand + Lapack + FloatCore 
         &self,
         param: &Self::Param,
     ) -> ::std::result::Result<Self::Gradient, argmin::core::Error> {
-        Ok(self.series().derivative(1).evaluate(*param)
-            * FloatCore::signum(self.series().evaluate(*param) - self.y0))
+        Ok(self.problem.derivative(1).evaluate(*param)
+            * FloatCore::signum(self.problem.evaluate(*param) - self.y0))
     }
 }
 
-impl<'a, E: ArgminFloat + Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd>
-    Hessian for InverseProblem<'a, E>
+impl<E: ArgminFloat + Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd>
+    Hessian for InverseProblem<E>
 {
     type Param = E;
     type Hessian = E;
@@ -263,8 +286,8 @@ impl<'a, E: ArgminFloat + Scalar<Real = E> + ScalarOperand + Lapack + FloatCore 
         &self,
         param: &Self::Param,
     ) -> ::std::result::Result<Self::Hessian, argmin::core::Error> {
-        Ok(self.series().derivative(2).evaluate(*param)
-            * FloatCore::signum(self.series().evaluate(*param) - self.y0))
+        Ok(self.problem.derivative(2).evaluate(*param)
+            * FloatCore::signum(self.problem.evaluate(*param) - self.y0))
     }
 }
 
@@ -323,11 +346,9 @@ where
                 "beginning inverse solve"
             );
 
-            let cost = InverseProblem {
-                problem: self.solution(),
-                y0,
-                constraint: self.constraint.as_ref(),
-            };
+            let cost = InverseProblemBuilder::new(y0, self.solution())
+                .with_constraint(self.constraint.as_ref())
+                .build();
 
             // set up line search
             let linesearch = MoreThuenteLineSearch::new()
@@ -375,6 +396,7 @@ mod test {
     use super::{Fit, Unsure};
     use crate::chebyshev::{PolynomialSeries, Series};
     use crate::utils::find_limits;
+    use crate::Constraint;
 
     pub fn generate_data<E>(
         rng: &mut impl Rng,
@@ -403,6 +425,36 @@ mod test {
         (x, y, series)
     }
 
+    pub fn generate_data_passing_through_origin<E>(
+        rng: &mut impl Rng,
+        Range { start, end }: Range<E>,
+        num_points: usize,
+        degree: usize,
+    ) -> (Array1<E>, Array1<E>, Series<E>, Series<E>)
+    where
+        E: Scalar<Real = E> + ScalarOperand + PartialOrd + Lapack + FloatCore,
+        Standard: Distribution<E>,
+    {
+        let chebyshev_coeffs = (0..=degree).map(|_| rng.gen()).collect::<Vec<_>>();
+
+        let x = (0..num_points)
+            .map(|m| {
+                start
+                    + E::from(m).unwrap() * (end - start)
+                        / (E::from(num_points).unwrap() - E::one())
+            })
+            .collect::<Array1<_>>();
+
+        let series = Series::from_coeff(chebyshev_coeffs, x.as_slice().unwrap());
+        let constraint = Series::from_coeff(vec![E::zero(), E::one()], x.as_slice().unwrap());
+
+        let combined = series.clone() * constraint.clone();
+
+        let y = x.iter().map(|x| combined.evaluate(*x)).collect::<Array1<E>>();
+
+        (x, y, series, constraint)
+    }
+
     #[test]
     fn direct_evaluation_works_for_one_degree() {
         let state = 40;
@@ -421,6 +473,45 @@ mod test {
             solution: series,
             covariance,
             constraint: None,
+            response_domain: find_limits(y.as_slice().unwrap()),
+        };
+
+        for (ii, x) in x
+            .into_iter()
+            .enumerate()
+            .skip(1)
+            .take(number_of_data_points - 2)
+        {
+            let expected = y[ii];
+            let calculated = fit
+                .response(Unsure {
+                    estimate: x,
+                    standard_uncertainty: 0.0,
+                })
+                .unwrap();
+
+            approx::assert_relative_eq!(expected, calculated.estimate, max_relative = 1e-7);
+        }
+    }
+
+    #[test]
+    fn constrained_direct_evaluation_works_for_one_degree() {
+        let state = 40;
+        let mut rng = Isaac64Rng::seed_from_u64(state);
+        let degree = 1;
+        let number_of_data_points = rng.gen_range(50..100);
+        let domain = Range {
+            start: -1.,
+            end: 1.,
+        };
+
+        let (x, y, series, constraint) = generate_data_passing_through_origin(&mut rng, domain, number_of_data_points, degree);
+        let covariance = Array2::zeros((degree + 1, degree + 1));
+
+        let fit = Fit {
+            solution: series,
+            covariance,
+            constraint: Some(Constraint { multiplicative: constraint, additive: Series::from_coeff(vec![0.0], x.as_slice().unwrap()) }),
             response_domain: find_limits(y.as_slice().unwrap()),
         };
 
@@ -489,6 +580,75 @@ mod test {
     }
 
     #[test]
+    fn constrained_inverse_evaluation_works_for_one_degree() {
+        let state = 40;
+        let mut rng = Isaac64Rng::seed_from_u64(state);
+        let degree = 1;
+        let number_of_data_points = rng.gen_range(50..100);
+        let domain = Range {
+            start: -1.,
+            end: 1.,
+        };
+
+        let mut monotonic_series = None;
+        let mut monotonic_constraint = None;
+        let mut monotonic_x = None;
+        let mut monotonic_y = None;
+
+        // We need a monotonic training function
+        loop {
+            let (x, y, series, constraint) = generate_data_passing_through_origin(&mut rng, domain.clone(), number_of_data_points, degree);
+            let combined = series.clone() * constraint.clone();
+            if combined
+                .is_monotonic()
+                .expect("failure in monotonicity check")
+            {
+                let _ = monotonic_series.insert(series);
+                let _ = monotonic_constraint.insert(constraint);
+                let _ = monotonic_x.insert(x);
+                let _ = monotonic_y.insert(y);
+                break;
+            }
+        }
+        let series = monotonic_series.unwrap();
+        let constraint = monotonic_constraint.unwrap();
+        let x = monotonic_x.unwrap();
+        let y = monotonic_y.unwrap();
+        let covariance = Array2::zeros((degree + 1, degree + 1));
+
+        let fit = Fit {
+            solution: series,
+            covariance,
+            constraint: Some(Constraint { multiplicative: constraint, additive: Series::from_coeff(vec![0.0], x.as_slice().unwrap()) }),
+            response_domain: find_limits(y.as_slice().unwrap()),
+        };
+
+        for (ii, y) in y
+            .into_iter()
+            .enumerate()
+            .skip(1)
+            .take(number_of_data_points - 2)
+        {
+            let expected = x[ii];
+            let calculated = fit
+                .stimulus(
+                    Unsure {
+                        estimate: y,
+                        standard_uncertainty: 0.0,
+                    },
+                    None,
+                    None,
+                )
+                .expect("failed to solve the minimisation problem");
+            if expected == 0.0 {
+                approx::assert_relative_eq!(expected, calculated.estimate, epsilon = 1e-5);
+            } else {
+                approx::assert_relative_eq!(expected, calculated.estimate, max_relative = 1e-5);
+            }
+        }
+    }
+
+    #[test]
     fn direct_evaluation_works_for_degree_five() {
         let state = 40;
         let mut rng = Isaac64Rng::seed_from_u64(state);
@@ -506,6 +666,45 @@ mod test {
             solution: series,
             covariance,
             constraint: None,
+            response_domain: find_limits(y.as_slice().unwrap()),
+        };
+
+        for (ii, x) in x
+            .into_iter()
+            .enumerate()
+            .skip(1)
+            .take(number_of_data_points - 2)
+        {
+            let expected = y[ii];
+            let calculated = fit
+                .response(Unsure {
+                    estimate: x,
+                    standard_uncertainty: 0.0,
+                })
+                .unwrap();
+
+            approx::assert_relative_eq!(expected, calculated.estimate, max_relative = 1e-7);
+        }
+    }
+
+    #[test]
+    fn constrained_direct_evaluation_works_for_degree_five() {
+        let state = 40;
+        let mut rng = Isaac64Rng::seed_from_u64(state);
+        let degree = 5;
+        let number_of_data_points = rng.gen_range(50..100);
+        let domain = Range {
+            start: -1.,
+            end: 1.,
+        };
+
+        let (x, y, series, constraint) = generate_data_passing_through_origin(&mut rng, domain, number_of_data_points, degree);
+        let covariance = Array2::zeros((degree + 1, degree + 1));
+
+        let fit = Fit {
+            solution: series,
+            covariance,
+            constraint: Some(Constraint { multiplicative: constraint, additive: Series::from_coeff(vec![0.0], x.as_slice().unwrap()) }),
             response_domain: find_limits(y.as_slice().unwrap()),
         };
 
@@ -550,9 +749,9 @@ mod test {
                 .is_monotonic()
                 .expect("failure in monotonicity check")
             {
-                monotonic_series = Some(series);
-                monotonic_x = Some(x);
-                monotonic_y = Some(y);
+                let _ = monotonic_series.insert(series);
+                let _ = monotonic_x.insert(x);
+                let _ = monotonic_y.insert(y);
                 break;
             }
         }
@@ -596,6 +795,75 @@ mod test {
     }
 
     #[test]
+    fn constrained_inverse_evaluation_works_for_degree_two() {
+        let state = 40;
+        let mut rng = Isaac64Rng::seed_from_u64(state);
+        let degree = 2;
+        let number_of_data_points = rng.gen_range(50..100);
+        let domain = Range {
+            start: -1.,
+            end: 1.,
+        };
+
+        let mut monotonic_series = None;
+        let mut monotonic_constraint = None;
+        let mut monotonic_x = None;
+        let mut monotonic_y = None;
+
+        // We need a monotonic training function
+        loop {
+            let (x, y, series, constraint) = generate_data_passing_through_origin(&mut rng, domain.clone(), number_of_data_points, degree);
+            let combined = series.clone() * constraint.clone();
+            if combined
+                .is_monotonic()
+                .expect("failure in monotonicity check")
+            {
+                let _ = monotonic_series.insert(series);
+                let _ = monotonic_constraint.insert(constraint);
+                let _ = monotonic_x.insert(x);
+                let _ = monotonic_y.insert(y);
+                break;
+            }
+        }
+        let series = monotonic_series.unwrap();
+        let constraint = monotonic_constraint.unwrap();
+        let x = monotonic_x.unwrap();
+        let y = monotonic_y.unwrap();
+        let covariance = Array2::zeros((degree + 1, degree + 1));
+
+        let fit = Fit {
+            solution: series,
+            covariance,
+            constraint: Some(Constraint { multiplicative: constraint, additive: Series::from_coeff(vec![0.0], x.as_slice().unwrap()) }),
+            response_domain: find_limits(y.as_slice().unwrap()),
+        };
+
+        for (ii, y) in y
+            .into_iter()
+            .enumerate()
+            .skip(1)
+            .take(number_of_data_points - 2)
+        {
+            let expected = x[ii];
+            let calculated = fit
+                .stimulus(
+                    Unsure {
+                        estimate: y,
+                        standard_uncertainty: 0.0,
+                    },
+                    None,
+                    None,
+                )
+                .expect("failed to solve the minimisation problem");
+            if expected == 0.0 {
+                approx::assert_relative_eq!(expected, calculated.estimate, epsilon = 1e-5);
+            } else {
+                approx::assert_relative_eq!(expected, calculated.estimate, max_relative = 1e-5);
+            }
+        }
+    }
+
+    #[test]
     fn inverse_evaluation_works_for_degree_five() {
         let state = 40;
         let mut rng = Isaac64Rng::seed_from_u64(state);
@@ -618,9 +886,9 @@ mod test {
                 .is_monotonic()
                 .expect("failure in monotonicity check")
             {
-                monotonic_series = Some(series);
-                monotonic_x = Some(x);
-                monotonic_y = Some(y);
+                let _ = monotonic_series.insert(series);
+                let _ = monotonic_x.insert(x);
+                let _ = monotonic_y.insert(y);
                 break;
             }
         }
@@ -655,6 +923,75 @@ mod test {
                 )
                 .expect("failed to solve the minimisation problem");
 
+            if expected == 0.0 {
+                approx::assert_relative_eq!(expected, calculated.estimate, epsilon = 1e-5);
+            } else {
+                approx::assert_relative_eq!(expected, calculated.estimate, max_relative = 1e-5);
+            }
+        }
+    }
+
+    #[test]
+    fn constrained_inverse_evaluation_works_for_degree_five() {
+        let state = 40;
+        let mut rng = Isaac64Rng::seed_from_u64(state);
+        let degree = 5;
+        let number_of_data_points = rng.gen_range(50..100);
+        let domain = Range {
+            start: -1.,
+            end: 1.,
+        };
+
+        let mut monotonic_series = None;
+        let mut monotonic_constraint = None;
+        let mut monotonic_x = None;
+        let mut monotonic_y = None;
+
+        // We need a monotonic training function
+        loop {
+            let (x, y, series, constraint) = generate_data_passing_through_origin(&mut rng, domain.clone(), number_of_data_points, degree);
+            let combined = series.clone() * constraint.clone();
+            if combined
+                .is_monotonic()
+                .expect("failure in monotonicity check")
+            {
+                let _ = monotonic_series.insert(series);
+                let _ = monotonic_constraint.insert(constraint);
+                let _ = monotonic_x.insert(x);
+                let _ = monotonic_y.insert(y);
+                break;
+            }
+        }
+        let series = monotonic_series.unwrap();
+        let constraint = monotonic_constraint.unwrap();
+        let x = monotonic_x.unwrap();
+        let y = monotonic_y.unwrap();
+        let covariance = Array2::zeros((degree + 1, degree + 1));
+
+        let fit = Fit {
+            solution: series,
+            covariance,
+            constraint: Some(Constraint { multiplicative: constraint, additive: Series::from_coeff(vec![0.0], x.as_slice().unwrap()) }),
+            response_domain: find_limits(y.as_slice().unwrap()),
+        };
+
+        for (ii, y) in y
+            .into_iter()
+            .enumerate()
+            .skip(1)
+            .take(number_of_data_points - 2)
+        {
+            let expected = x[ii];
+            let calculated = fit
+                .stimulus(
+                    Unsure {
+                        estimate: y,
+                        standard_uncertainty: 0.0,
+                    },
+                    None,
+                    None,
+                )
+                .expect("failed to solve the minimisation problem");
             if expected == 0.0 {
                 approx::assert_relative_eq!(expected, calculated.estimate, epsilon = 1e-5);
             } else {
