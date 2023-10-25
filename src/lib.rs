@@ -5,12 +5,14 @@
 mod builder;
 mod calculate;
 mod chebyshev;
+mod error;
 mod problem;
 mod solvers;
 mod utils;
 
-pub type Result<T> = ::std::result::Result<T, Box<dyn ::std::error::Error>>;
+pub type PolyCalResult<T, E> = ::std::result::Result<T, PolyCalError<E>>;
 
 pub use builder::ProblemBuilder;
 pub use calculate::{Fit, Unsure};
+pub use error::PolyCalError;
 pub use problem::{Constraint, Problem};

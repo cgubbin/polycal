@@ -1,4 +1,3 @@
-use crate::Result;
 use ndarray::{Array1, Array2, ArrayView1};
 use ndarray_linalg::Scalar;
 use std::ops::Range;
@@ -45,7 +44,10 @@ pub fn find_limits<E: Clone + PartialOrd>(variable: &[E]) -> Range<E> {
     Range { start, end }
 }
 
-pub fn outer_product<T: Scalar>(a: &Array1<T>, b: &Array1<T>) -> Result<Array2<T>> {
+pub fn outer_product<T: Scalar>(
+    a: &Array1<T>,
+    b: &Array1<T>,
+) -> Result<Array2<T>, ndarray::ShapeError> {
     let a: Array2<T> = a.clone().into_shape((a.len(), 1))?;
     let b: Array2<T> = b.clone().into_shape((1, b.len()))?;
 

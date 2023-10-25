@@ -2,9 +2,8 @@ use ndarray_linalg::Scalar;
 use num_traits::float::FloatCore;
 use std::ops::Range;
 
-use super::{Basis, Series};
+use super::{Basis, ChebyshevError, Series};
 use crate::utils::find_limits;
-use crate::Result;
 
 #[derive(Default)]
 pub struct Set {}
@@ -60,9 +59,9 @@ impl<E: FloatCore + PartialOrd + Clone, W> ChebyshevBuilder<Vec<E>, Unset, W> {
     pub(crate) fn on_domain_from(
         self,
         independent: &[E],
-    ) -> Result<ChebyshevBuilder<Vec<E>, Range<E>, W>> {
+    ) -> Result<ChebyshevBuilder<Vec<E>, Range<E>, W>, ChebyshevError> {
         if independent.iter().any(|x| !x.is_finite()) {
-            return Err("independent variable must be finite and free of NaN".into());
+            return Err(ChebyshevError::InvalidData);
         }
         let domain = find_limits(independent);
         Ok(ChebyshevBuilder {
@@ -89,9 +88,9 @@ impl<E: FloatCore + PartialOrd + Clone, D> ChebyshevBuilder<Vec<E>, D, Unset> {
     pub(crate) fn on_window_from(
         self,
         independent: &[E],
-    ) -> Result<ChebyshevBuilder<Vec<E>, D, Range<E>>> {
+    ) -> Result<ChebyshevBuilder<Vec<E>, D, Range<E>>, ChebyshevError> {
         if independent.iter().any(|x| !x.is_finite()) {
-            return Err("independent variable must be finite and free of NaN".into());
+            return Err(ChebyshevError::InvalidData);
         }
         let window = find_limits(independent);
         Ok(ChebyshevBuilder {

@@ -1,4 +1,3 @@
-use crate::Result;
 use ndarray::{Array1, Array2, ArrayView1, ArrayView2};
 
 mod total_least_squares;
@@ -6,6 +5,18 @@ mod weighted_least_squares;
 
 pub use total_least_squares::TotalLeastSquares;
 pub use weighted_least_squares::WeightedLeastSquares;
+
+#[derive(Debug, thiserror::Error)]
+pub enum SolverError {
+    #[error("failure in matrix inversion")]
+    Inverse(ndarray_linalg::error::LinalgError),
+    #[error("failure in least squares SVD")]
+    LeastSquares(ndarray_linalg::error::LinalgError),
+    #[error("failure in cholesky factorisation")]
+    Cholesky(ndarray_linalg::error::LinalgError),
+    #[error("failure in gauss-newton minimisation")]
+    IterativeSolver(#[from] argmin::core::Error),
+}
 
 pub struct Solution<E> {
     coeff: Array1<E>,
@@ -24,7 +35,7 @@ impl<E> Solution<E> {
 }
 
 pub trait SolveSystem<E> {
-    fn solve(&self) -> Result<Solution<E>>;
+    fn solve(&self) -> ::std::result::Result<Solution<E>, SolverError>;
 }
 
 #[derive(Clone)]

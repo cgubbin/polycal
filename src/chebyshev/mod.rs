@@ -3,7 +3,6 @@ mod builder;
 mod primitive;
 mod series;
 
-use crate::Result;
 pub use basis::{Basis, ConstrainedPolynomial, Polynomial};
 
 #[allow(clippy::module_name_repetitions)]
@@ -11,6 +10,16 @@ pub use builder::ChebyshevBuilder;
 use primitive::CSeries;
 pub use series::Series;
 use std::ops::Range;
+
+#[derive(Debug, thiserror::Error)]
+pub enum ChebyshevError {
+    #[error("provided data must be free of NaN, or infinities")]
+    InvalidData,
+    #[error("failure in eigenvalue calculation")]
+    Eigenvalue(#[from] ndarray_linalg::error::LinalgError),
+    #[error("shape error in forming companion matrix")]
+    Shape(ndarray::ShapeError),
+}
 
 pub trait PolynomialSeries<E: PartialOrd>: Clone + Sized {
     fn derivative(&self, count: usize) -> Self {
@@ -29,8 +38,8 @@ pub trait PolynomialSeries<E: PartialOrd>: Clone + Sized {
             }
         }
     }
-    fn roots(&self) -> Result<Vec<E>>;
-    fn roots_in_window(&self) -> Result<bool> {
+    fn roots(&self) -> Result<Vec<E>, ChebyshevError>;
+    fn roots_in_window(&self) -> Result<bool, ChebyshevError> {
         let window = self.window();
         Ok(!self.roots()?.iter().any(|root| window.contains(root)))
     }
@@ -43,7 +52,7 @@ pub trait PolynomialSeries<E: PartialOrd>: Clone + Sized {
     fn domain(&self) -> Range<E>;
     fn window(&self) -> Range<E>;
     fn null(domain: Range<E>, window: Range<E>) -> Self;
-    fn is_monotonic(&self) -> Result<bool> {
+    fn is_monotonic(&self) -> Result<bool, ChebyshevError> {
         let derivative = self.derivative(1);
         derivative.roots_in_window()
     }

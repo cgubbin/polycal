@@ -1,6 +1,6 @@
+use super::SolverError;
 use super::{Solution, SolveSystem, Uncertainty};
 use crate::utils::outer_product;
-use crate::Result;
 use ndarray::{s, Array1, Array2, ArrayView1, ArrayView2, Axis, ScalarOperand};
 use ndarray_linalg::{Cholesky, Inverse, Lapack, LeastSquaresSvd, Scalar, UPLO};
 
@@ -13,7 +13,7 @@ pub struct WeightedLeastSquares<'a, E> {
 impl<'a, E: Lapack + Scalar<Real = E> + ScalarOperand> SolveSystem<E>
     for WeightedLeastSquares<'a, E>
 {
-    fn solve(&self) -> Result<Solution<E>> {
+    fn solve(&self) -> ::std::result::Result<Solution<E>, SolverError> {
         match self.uncertainty {
             Uncertainty::None => self.solve_unweighted(),
             Uncertainty::Diagonal(uy) => self.solve_weighted(uy),
@@ -23,7 +23,8 @@ impl<'a, E: Lapack + Scalar<Real = E> + ScalarOperand> SolveSystem<E>
 }
 
 impl<'a, E: Lapack + Scalar<Real = E> + ScalarOperand> WeightedLeastSquares<'a, E> {
-    fn solve_unweighted(&self) -> Result<Solution<E>> {
+    #[tracing::instrument(skip_all)]
+    fn solve_unweighted(&self) -> ::std::result::Result<Solution<E>, SolverError> {
         let mut lhs = self.h.to_owned();
         let rhs = self.y.to_owned();
         let scaling = lhs
@@ -33,11 +34,13 @@ impl<'a, E: Lapack + Scalar<Real = E> + ScalarOperand> WeightedLeastSquares<'a, 
 
         lhs /= &scaling;
 
-        let result = lhs.least_squares(&rhs)?;
+        let result = lhs.least_squares(&rhs).map_err(SolverError::LeastSquares)?;
 
         let coeff = (&result.solution.t() / &scaling).t().to_owned();
 
-        let covariance = (lhs.t().dot(&lhs)).inv()? / outer_product(&scaling, &scaling)?;
+        let covariance = (lhs.t().dot(&lhs)).inv().map_err(SolverError::Inverse)?
+            / outer_product(&scaling, &scaling).unwrap(); // This method is tested, and can
+                                                          // reasonably be expected to be infallible.
 
         Ok(Solution {
             coeff,
@@ -46,7 +49,11 @@ impl<'a, E: Lapack + Scalar<Real = E> + ScalarOperand> WeightedLeastSquares<'a, 
         })
     }
 
-    fn solve_weighted(&self, uy: ArrayView1<'a, E>) -> Result<Solution<E>> {
+    #[tracing::instrument(skip_all)]
+    fn solve_weighted(
+        &self,
+        uy: ArrayView1<'a, E>,
+    ) -> ::std::result::Result<Solution<E>, SolverError> {
         let mut lhs = self.h.to_owned();
         let uy = uy.to_owned();
 
@@ -64,13 +71,15 @@ impl<'a, E: Lapack + Scalar<Real = E> + ScalarOperand> WeightedLeastSquares<'a, 
 
         lhs /= &scaling;
 
-        let result = lhs.least_squares(&rhs)?;
+        let result = lhs.least_squares(&rhs).map_err(SolverError::LeastSquares)?;
 
         let coeff = (&result.solution.t() / &scaling).t().to_owned();
 
         let lhs = self.h.to_owned();
         let w = Array2::from_diag(&uy.to_owned().mapv(|uy| E::one() / uy.powi(2)));
-        let covariance = (lhs.t().dot(&w.dot(&lhs))).inv()?;
+        let covariance = (lhs.t().dot(&w.dot(&lhs)))
+            .inv()
+            .map_err(SolverError::Inverse)?;
 
         // let covariance = (lhs.t().dot(&lhs)).inv()? / outer_product(&scaling, &scaling)?;
 
@@ -81,11 +90,12 @@ impl<'a, E: Lapack + Scalar<Real = E> + ScalarOperand> WeightedLeastSquares<'a, 
         })
     }
 
-    fn solve_full(&self, vy: ArrayView2<'a, E>) -> Result<Solution<E>> {
+    #[tracing::instrument(skip_all)]
+    fn solve_full(&self, vy: ArrayView2<'a, E>) -> ::std::result::Result<Solution<E>, SolverError> {
         let _lhs = self.h.to_owned();
         let vy = vy.to_owned();
 
-        let _lower = vy.cholesky(UPLO::Lower)?;
+        let _lower = vy.cholesky(UPLO::Lower).map_err(SolverError::Cholesky)?;
 
         unimplemented!("no impl for full-rank WLS for now.");
     }

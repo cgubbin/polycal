@@ -1,14 +1,19 @@
-use ndarray::{Array1, Array2, ArrayView1, ArrayView2, ScalarOperand};
+use ndarray::{Array1, Array2, ArrayView1, ArrayView2, ScalarOperand, ShapeError};
 use ndarray_linalg::{Lapack, Scalar};
 use num_traits::float::FloatCore;
 use std::ops::Range;
+use tracing::{event, Level};
 
 use crate::calculate::Fit;
 use crate::chebyshev::{
-    Basis, ChebyshevBuilder, ConstrainedPolynomial, Polynomial, PolynomialSeries, Series,
+    Basis, ChebyshevBuilder, ChebyshevError, ConstrainedPolynomial, Polynomial, PolynomialSeries,
+    Series,
 };
-use crate::solvers::{SolveSystem, TotalLeastSquares, Uncertainty, WeightedLeastSquares};
-use crate::Result;
+use crate::solvers::{
+    SolveSystem, SolverError, TotalLeastSquares, Uncertainty, WeightedLeastSquares,
+};
+use crate::utils::find_limits;
+use crate::PolyCalError;
 
 pub enum ScoringStrategy {
     /// Akaike's method
@@ -59,7 +64,7 @@ where
     E: Scalar<Real = E> + PartialOrd + ScalarOperand + Lapack + FloatCore,
 {
     #[tracing::instrument(skip(self))]
-    pub fn solve(&self, n_max: usize) -> Result<Fit<E>> {
+    pub fn solve(&self, n_max: usize) -> ::std::result::Result<Fit<E>, PolyCalError<E>> {
         let fits = (1..n_max)
             .filter_map(|polynomial_degree| match self.fit(polynomial_degree) {
                 Ok(fit) => match self.check_is_monotonic(fit.solution()) {
@@ -80,14 +85,23 @@ where
             })
             .collect::<Vec<_>>();
 
-        let (_best_score, best_fit) = self.find_best_fit(fits);
+        event!(
+            Level::INFO,
+            num_successes = fits.len(),
+            num_failures = n_max - fits.len(),
+            "finding best fit"
+        );
+        let (_best_score, best_fit) = self.find_best_fit(fits)?;
 
         // TODO: Chi-2 validation at nu = m - n - 1
 
         Ok(best_fit)
     }
 
-    fn find_best_fit(&self, mut fits: Vec<Fit<E>>) -> (E, Fit<E>) {
+    fn find_best_fit(
+        &self,
+        mut fits: Vec<Fit<E>>,
+    ) -> ::std::result::Result<(E, Fit<E>), PolyCalError<E>> {
         let scores = fits
             .iter()
             .map(|fit| self.score(fit.solution()))
@@ -100,7 +114,7 @@ where
             .windows(2)
             .all(|window| window[0].signum() == window[1].signum())
         {
-            println!("no minimum found");
+            return Err(PolyCalError::NoMinimum { scores });
         }
         let best_score = *scores
             .iter()
@@ -111,11 +125,13 @@ where
             .map(|score| score - best_score)
             .collect::<Vec<_>>();
 
+        // Can't fail as we just substracted the best score: this means one element will always be
+        // zero
         let index = scores.iter().position(|&score| score == E::zero()).unwrap();
 
         let best_fit = fits.swap_remove(index);
 
-        (best_score, best_fit)
+        Ok((best_score, best_fit))
     }
 
     fn score(&self, fit: &Series<E>) -> E {
@@ -150,8 +166,11 @@ where
         })
     }
 
-    fn fit(&self, polynomial_degree: usize) -> Result<Fit<E>> {
-        let design_matrix = self.design_matrix(polynomial_degree)?;
+    #[tracing::instrument(skip(self))]
+    fn fit(&self, polynomial_degree: usize) -> ::std::result::Result<Fit<E>, SolverError> {
+        let design_matrix = self.design_matrix(polynomial_degree).unwrap(); // This method is fallible, but only because of a matrix-shape-conversion.
+                                                                            // As the method takes a single parameter, then builds the matrix, this
+                                                                            // cannot occur in practice
         let y = self.constraint.as_ref().map_or_else(
             || self.y.to_owned(),
             |constraint| self.shifted_independent_variable(constraint),
@@ -199,6 +218,9 @@ where
                 .build(),
             covariance: result.covariance().to_owned(),
             constraint: self.constraint.clone(),
+            response_domain: find_limits(self.y.to_slice().unwrap()), // we build y in the
+                                                                      // constructor, so know it is contiguous and in standard order. under these
+                                                                      // circumstances the unwrap is infallible.
         })
     }
 
@@ -217,7 +239,10 @@ where
             .collect()
     }
 
-    pub(crate) fn design_matrix(&self, polynomial_degree: usize) -> Result<Array2<E>> {
+    pub(crate) fn design_matrix(
+        &self,
+        polynomial_degree: usize,
+    ) -> ::std::result::Result<Array2<E>, ShapeError> {
         let basis = Basis::new(polynomial_degree);
         let rows = self
             .t
@@ -230,13 +255,13 @@ where
             })
             .collect::<Vec<E>>();
 
-        Ok(Array2::from_shape_vec(
-            (self.number_of_datapoints(), polynomial_degree + 1),
-            rows,
-        )?)
+        Array2::from_shape_vec((self.number_of_datapoints(), polynomial_degree + 1), rows)
     }
 
-    fn check_is_monotonic(&self, solution: &Series<E>) -> Result<bool> {
+    fn check_is_monotonic(
+        &self,
+        solution: &Series<E>,
+    ) -> ::std::result::Result<bool, ChebyshevError> {
         self.constraint.as_ref().map_or_else(
             || solution.is_monotonic(),
             |constraint| (solution.clone() * constraint.multiplicative.clone()).is_monotonic(),

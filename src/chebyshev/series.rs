@@ -1,5 +1,4 @@
-use super::{Basis, CSeries, PolynomialSeries};
-use crate::Result;
+use super::{Basis, CSeries, ChebyshevError, PolynomialSeries};
 use ndarray::{arr1, s, Array1, Array2, ScalarOperand};
 use ndarray_linalg::{eig::EigVals, Lapack, Scalar};
 use num_traits::float::FloatCore;
@@ -133,7 +132,7 @@ impl<E: Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd> Poly
         }
     }
 
-    fn roots(&self) -> Result<Vec<E>> {
+    fn roots(&self) -> Result<Vec<E>, ChebyshevError> {
         match self.degree() {
             0 => Ok(vec![]),
             1 => {
@@ -151,7 +150,7 @@ impl<E> Series<E>
 where
     E: Scalar<Real = E> + ScalarOperand + Lapack + FloatCore,
 {
-    fn real_eigenvalues_of_companion_matrix(&self) -> Result<Vec<E>> {
+    fn real_eigenvalues_of_companion_matrix(&self) -> Result<Vec<E>, ChebyshevError> {
         let mut eigenvalues = self
             .companion_matrix()?
             .eigvals()?
@@ -165,9 +164,13 @@ where
         Ok(eigenvalues)
     }
 
-    fn companion_matrix(&self) -> Result<Array2<E>> {
+    fn companion_matrix(&self) -> Result<Array2<E>, ChebyshevError> {
         if self.degree() == 0 {
-            return Err("series must have degree of at least 1.".into());
+            unreachable!(
+                "the handler ensures we don't call this for degree 0 \n
+                degree zero polynomials have no roots.
+            "
+            );
         } else if self.degree() == 1 {
             let mut coeffs = self.coeff.iter();
             return Ok(Array2::from_diag_elem(
@@ -193,7 +196,9 @@ where
         bottom += E::one() / (E::one() + E::one());
         bottom[0] = (E::one() / (E::one() + E::one())).sqrt();
 
-        let mut companion_matrix = companion_matrix.into_shape((self.degree(), self.degree()))?;
+        let mut companion_matrix = companion_matrix
+            .into_shape((self.degree(), self.degree()))
+            .map_err(ChebyshevError::Shape)?;
 
         let curr_rcol = companion_matrix.slice(s![.., self.degree() - 1]).to_owned();
         companion_matrix

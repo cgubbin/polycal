@@ -7,46 +7,68 @@ use argmin::{
 };
 use ndarray::{Array1, Array2, ScalarOperand};
 use ndarray_linalg::{Lapack, Scalar};
-use ndarray_rand::{
-    rand::SeedableRng,
-    rand_distr::{uniform::SampleUniform, Distribution, Uniform},
-};
 use num_traits::float::FloatCore;
-use rand_isaac::Isaac64Rng;
 use std::ops::Range;
+use tracing::{event, Level};
 
 use crate::chebyshev::{Polynomial, PolynomialSeries, Series};
+use crate::error::Kind;
 use crate::problem::Constraint;
 use crate::utils::to_scaled;
-use crate::Result;
+use crate::{PolyCalError, PolyCalResult};
 
 pub struct Fit<E> {
+    /// The solution calculated using provided calibration data
     pub(crate) solution: Series<E>,
+    /// Calculated covariance matrix for the fitting coefficients
     pub(crate) covariance: Array2<E>,
+    /// The range of response values used in calibration
+    pub(crate) response_domain: Range<E>,
+    /// Constraint used in the fit procedure
     pub(crate) constraint: Option<Constraint<E>>,
 }
 
 #[derive(Copy, Clone, Debug)]
 pub struct Unsure<E> {
+    /// Central value, or mean, of the measurement
     pub estimate: E,
+    /// Standard deviation of the measurement
     pub standard_uncertainty: E,
 }
 
-impl<E: Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd> Fit<E> {
+impl<E: Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd + tracing::Value>
+    Fit<E>
+{
     /// Direct evaluation y = `p_n(x`, a)
-    pub fn response(&self, stimulus: Unsure<E>) -> Unsure<E> {
+    ///
+    /// Given a new stimulus value, estimate the response observed from the given calibration
+    /// curve.
+    ///
+    /// # Errors
+    /// If the provided stimulus lies outside the data-range used to form the calibration
+    /// this method returns an error.
+    #[tracing::instrument(skip(self))]
+    pub fn response(&self, stimulus: Unsure<E>) -> PolyCalResult<Unsure<E>, E> {
+        if !self.solution().domain().contains(&stimulus.estimate) {
+            return Err(PolyCalError::OutOfRange {
+                value: stimulus.estimate,
+                range: self.solution().domain(),
+                kind: Kind::Stimulus,
+            });
+        }
         let t = to_scaled(stimulus.estimate, self.domain());
 
+        event!(Level::INFO, scaled = t, "evaluating series");
         let estimate = self.evaluate_direct(t);
 
-        // Todo: method with constraint
+        event!(Level::INFO, estimate = estimate, "evaluating uncertainty");
         let standard_uncertainty =
             self.evaluate_direct_uncertainty(t, stimulus.standard_uncertainty);
 
-        Unsure {
+        Ok(Unsure {
             estimate,
             standard_uncertainty,
-        }
+        })
     }
 }
 
@@ -65,13 +87,36 @@ where
         + argmin_math::ArgminMul<E, E>
         + argmin_math::ArgminL2Norm<E>
         + argmin_math::ArgminDot<E, E>
-        + SampleUniform,
-    Uniform<E>: Distribution<E>,
+        + tracing::Value,
 {
     /// Inverse evaluation y - `p_n(x`, a) = 0
-    pub fn stimulus(&self, response: Unsure<E>, guess: Option<E>) -> Result<Unsure<E>> {
-        let scaled_estimate = self.evaluate_inverse(response.estimate, guess)?;
+    ///
+    /// Given a new response value, estimate the stimulus which led to it from the given calibration
+    /// curve.
+    ///
+    /// # Errors
+    /// If the provided response lies outside the data-range used to form the calibration
+    /// this method returns an error.
+    ///
+    /// If there is an error in the underlying Gauss-Newton solver this method returns an error
+    #[tracing::instrument(skip(self, guess))]
+    pub fn stimulus(
+        &self,
+        response: Unsure<E>,
+        guess: Option<E>,
+        max_iter: Option<usize>,
+    ) -> PolyCalResult<Unsure<E>, E> {
+        if !self.response_domain.contains(&response.estimate) {
+            return Err(PolyCalError::OutOfRange {
+                value: response.estimate,
+                range: self.response_domain.clone(),
+                kind: Kind::Response,
+            });
+        }
 
+        let scaled_estimate = self.evaluate_inverse(response.estimate, guess, max_iter)?;
+
+        event!(Level::INFO, "evaluating uncertainty");
         let scaled_standard_uncertainty =
             self.evaluate_inverse_uncertainty(scaled_estimate, response.standard_uncertainty);
 
@@ -238,27 +283,45 @@ where
         + argmin_math::ArgminMul<E, E>
         + argmin_math::ArgminL2Norm<E>
         + argmin_math::ArgminDot<E, E>
-        + SampleUniform,
-    Uniform<E>: Distribution<E>,
+        + tracing::Value,
 {
-    pub(crate) fn evaluate_inverse(&self, y0: E, initial: Option<E>) -> Result<E> {
-        let state = 40;
-        let mut rng = Isaac64Rng::seed_from_u64(state);
-        let dist = Uniform::from(-E::one()..E::one());
+    #[tracing::instrument(skip(self, initial, max_iter))]
+    pub(crate) fn evaluate_inverse(
+        &self,
+        y0: E,
+        initial: Option<E>,
+        max_iter: Option<usize>,
+    ) -> ::std::result::Result<E, argmin::core::Error> {
         let target_domain = Range {
             start: -E::one(),
             end: E::one(),
         };
 
-        let mut param_in_domain = None;
-        let ii = 0;
+        // We know there will always be a root between - 1 and 1 if the stimulus value is within
+        // the calibration data range. We assume this is checked by the caller, so here we can be
+        // very sure the root exists.
+        //
+        // This does not preclude additional roots, lying outside [-1, 1] as the underlying
+        // polynomial is only guaranteed to be monotonic on [-1, 1].
+        //
+        // If the minimisation produces a root outside [-1, 1] we search again, currently just
+        // repeating indefinitely. If an initial parameter is provided this seeds the search, else
+        // we start at zero.
 
-        loop {
-            let init_param = if ii == 1 {
-                initial.map_or_else(|| dist.sample(&mut rng), |initial| initial)
-            } else {
-                dist.sample(&mut rng)
-            };
+        let mut init_param = initial.unwrap_or_else(|| E::zero());
+        let mut root = FloatCore::max_value();
+        let max_iter = max_iter.unwrap_or(100);
+
+        let mut iter = 0;
+
+        while !target_domain.contains(&root) && iter < max_iter {
+            iter += 1;
+            event!(
+                Level::INFO,
+                starting_point = init_param,
+                iteration = iter,
+                "beginning inverse solve"
+            );
 
             let cost = InverseProblem {
                 problem: self.solution(),
@@ -267,7 +330,8 @@ where
             };
 
             // set up line search
-            let linesearch = MoreThuenteLineSearch::new();
+            let linesearch = MoreThuenteLineSearch::new()
+                .with_bounds(E::from(1e-8).unwrap(), E::from(1e-1).unwrap())?;
 
             // Set up solver
             let solver = NewtonCG::new(linesearch);
@@ -280,18 +344,19 @@ where
             {
                 Ok(res) => {
                     let mut state = res.state().clone();
-                    let param = state.take_param().unwrap();
-
-                    if target_domain.contains(&param) {
-                        param_in_domain = Some(param);
-                        break;
-                    }
+                    root = state.take_param().unwrap();
                 }
                 Err(err) => tracing::warn!("error in minimisation {err:?}"),
             }
+
+            if root > target_domain.end {
+                init_param = (init_param + target_domain.start) / (E::one() + E::one());
+            } else {
+                init_param = (init_param + target_domain.end) / (E::one() + E::one());
+            }
         }
 
-        Ok(param_in_domain.unwrap())
+        Ok(root)
     }
 }
 
@@ -309,6 +374,7 @@ mod test {
 
     use super::{Fit, Unsure};
     use crate::chebyshev::{PolynomialSeries, Series};
+    use crate::utils::find_limits;
 
     pub fn generate_data<E>(
         rng: &mut impl Rng,
@@ -355,14 +421,22 @@ mod test {
             solution: series,
             covariance,
             constraint: None,
+            response_domain: find_limits(y.as_slice().unwrap()),
         };
 
-        for (ii, x) in x.into_iter().enumerate() {
+        for (ii, x) in x
+            .into_iter()
+            .enumerate()
+            .skip(1)
+            .take(number_of_data_points - 2)
+        {
             let expected = y[ii];
-            let calculated = fit.response(Unsure {
-                estimate: x,
-                standard_uncertainty: 0.0,
-            });
+            let calculated = fit
+                .response(Unsure {
+                    estimate: x,
+                    standard_uncertainty: 0.0,
+                })
+                .unwrap();
 
             approx::assert_relative_eq!(expected, calculated.estimate, max_relative = 1e-7);
         }
@@ -386,9 +460,15 @@ mod test {
             solution: series,
             covariance,
             constraint: None,
+            response_domain: find_limits(y.as_slice().unwrap()),
         };
 
-        for (ii, y) in y.into_iter().enumerate() {
+        for (ii, y) in y
+            .into_iter()
+            .enumerate()
+            .skip(1)
+            .take(number_of_data_points - 2)
+        {
             let expected = x[ii];
             let calculated = fit
                 .stimulus(
@@ -396,6 +476,7 @@ mod test {
                         estimate: y,
                         standard_uncertainty: 0.0,
                     },
+                    None,
                     None,
                 )
                 .expect("failed to solve the minimisation problem");
@@ -425,14 +506,22 @@ mod test {
             solution: series,
             covariance,
             constraint: None,
+            response_domain: find_limits(y.as_slice().unwrap()),
         };
 
-        for (ii, x) in x.into_iter().enumerate() {
+        for (ii, x) in x
+            .into_iter()
+            .enumerate()
+            .skip(1)
+            .take(number_of_data_points - 2)
+        {
             let expected = y[ii];
-            let calculated = fit.response(Unsure {
-                estimate: x,
-                standard_uncertainty: 0.0,
-            });
+            let calculated = fit
+                .response(Unsure {
+                    estimate: x,
+                    standard_uncertainty: 0.0,
+                })
+                .unwrap();
 
             approx::assert_relative_eq!(expected, calculated.estimate, max_relative = 1e-7);
         }
@@ -477,9 +566,15 @@ mod test {
             solution: series,
             covariance,
             constraint: None,
+            response_domain: find_limits(y.as_slice().unwrap()),
         };
 
-        for (ii, y) in y.into_iter().enumerate() {
+        for (ii, y) in y
+            .into_iter()
+            .enumerate()
+            .skip(1)
+            .take(number_of_data_points - 2)
+        {
             let expected = x[ii];
             let calculated = fit
                 .stimulus(
@@ -487,6 +582,7 @@ mod test {
                         estimate: y,
                         standard_uncertainty: 0.0,
                     },
+                    None,
                     None,
                 )
                 .expect("failed to solve the minimisation problem");
@@ -538,9 +634,15 @@ mod test {
             solution: series,
             covariance,
             constraint: None,
+            response_domain: find_limits(y.as_slice().unwrap()),
         };
 
-        for (ii, y) in y.into_iter().enumerate() {
+        for (ii, y) in y
+            .into_iter()
+            .enumerate()
+            .skip(1)
+            .take(number_of_data_points - 2)
+        {
             let expected = x[ii];
             let calculated = fit
                 .stimulus(
@@ -548,6 +650,7 @@ mod test {
                         estimate: y,
                         standard_uncertainty: 0.0,
                     },
+                    None,
                     None,
                 )
                 .expect("failed to solve the minimisation problem");
