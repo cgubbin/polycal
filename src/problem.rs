@@ -15,6 +15,7 @@ use crate::solvers::{
 use crate::utils::find_limits;
 use crate::PolyCalError;
 
+/// Different scoring strategies for fit procedure
 pub enum ScoringStrategy {
     /// Akaike's method
     Aic,
@@ -39,11 +40,22 @@ pub enum Covariance<'a, E> {
 }
 
 #[derive(Clone, Debug)]
+/// A constraint.
+///
+/// Given a constraint we use the problem y = p_n(x, a) * multiplicative(x) + additive(x). A
+/// carefully constructed constraint can ensure the response variable and it's derivatives obeys
+/// certain pre-conditions such as passing through the origin.
 pub struct Constraint<E> {
+    /// Additive component of the constraint
     pub(crate) additive: Series<E>,
+    /// Multiplicative component of the constraint
     pub(crate) multiplicative: Series<E>,
 }
 
+/// Problem abstraction
+///
+/// Problems are created using a [`ProblemBuilder`] which ensures the type-state of uncertainties
+/// is consistent.
 pub struct Problem<'a, E> {
     pub(crate) t: Array1<E>,
     pub(crate) y: ArrayView1<'a, E>,
@@ -63,6 +75,18 @@ impl<'a, E> Problem<'a, E>
 where
     E: Scalar<Real = E> + PartialOrd + ScalarOperand + Lapack + FloatCore,
 {
+    /// Solves a problem using all polynomial degrees up to `n_max`.
+    ///
+    /// Each solution is checked for monotonicity, if found to be non-monotonic the solution is
+    /// discarded as it is unsuitable for use as a calibration curve.
+    ///
+    /// After solution construction each is assessed according to the chosen [`ScoringStrategy`].
+    /// If the vector of scoring strategies exhibits a minimum which is not at the endpoints this
+    /// solution is selected and returned.
+    ///
+    /// In the event no minimum is found the chi-2 score for each solution is assessed, and the
+    /// lowest order solution to beat a standard tolerance is returned.
+    ///
     #[tracing::instrument(skip(self))]
     pub fn solve(&self, n_max: usize) -> ::std::result::Result<Fit<E>, PolyCalError<E>> {
         let fits = (1..n_max)
@@ -114,24 +138,50 @@ where
             .windows(2)
             .all(|window| window[0].signum() == window[1].signum())
         {
-            return Err(PolyCalError::NoMinimum { scores });
+            // No minimum
+            // Try again...
+            let chi_2_scores = fits
+                .iter()
+                .map(|fit| self.chi_2(fit.solution()))
+                .collect::<Vec<_>>();
+            let best_score = *chi_2_scores
+                .iter()
+                .min_by(|a, b| a.partial_cmp(b).unwrap())
+                .unwrap();
+            let scores = chi_2_scores
+                .into_iter()
+                .map(|score| score - best_score)
+                .collect::<Vec<_>>();
+
+            let index_of_lowest_order_acceptable_solution = scores
+                .iter()
+                .position(|&score| score < E::epsilon()).unwrap();
+
+            let best_fit = fits.swap_remove(index_of_lowest_order_acceptable_solution);
+
+            dbg!(&best_score);
+            dbg!(&best_fit.solution);
+
+            Ok((best_score, best_fit))
+
+        } else {
+            let best_score = *scores
+                .iter()
+                .min_by(|a, b| a.partial_cmp(b).unwrap())
+                .unwrap();
+            let scores = scores
+                .into_iter()
+                .map(|score| score - best_score)
+                .collect::<Vec<_>>();
+
+            // Can't fail as we just substracted the best score: this means one element will always be
+            // zero
+            let index = scores.iter().position(|&score| score == E::zero()).unwrap();
+
+            let best_fit = fits.swap_remove(index);
+
+            Ok((best_score, best_fit))
         }
-        let best_score = *scores
-            .iter()
-            .min_by(|a, b| a.partial_cmp(b).unwrap())
-            .unwrap();
-        let scores = scores
-            .into_iter()
-            .map(|score| score - best_score)
-            .collect::<Vec<_>>();
-
-        // Can't fail as we just substracted the best score: this means one element will always be
-        // zero
-        let index = scores.iter().position(|&score| score == E::zero()).unwrap();
-
-        let best_fit = fits.swap_remove(index);
-
-        Ok((best_score, best_fit))
     }
 
     fn score(&self, fit: &Series<E>) -> E {
@@ -258,7 +308,14 @@ where
         Array2::from_shape_vec((self.number_of_datapoints(), polynomial_degree + 1), rows)
     }
 
-    fn check_is_monotonic(
+    /// Check whether a given solution is monotonic
+    ///
+    /// This function applies the constraint, if available, and checks if the resulting polynomial
+    /// is monotonic.
+    ///
+    /// # Errors
+    /// - If there is an error in the underlying root finding algorithm.
+    pub fn check_is_monotonic(
         &self,
         solution: &Series<E>,
     ) -> ::std::result::Result<bool, ChebyshevError> {

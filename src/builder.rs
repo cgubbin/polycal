@@ -1,33 +1,78 @@
+//! Builders for Polynomial Calibration problems.
+//!
+//! This module provides flexible builder methods to allow polynomial calibration problems to be
+//! fluently built from a variety of inputs. A builder takes independent and dependent variables
+//! and is converted to a [`Problem`] with a final call to the `build` method.
+//!
+//! ```
+//! use ndarray::Array1;
+//! use polycal::ProblemBuilder;
+//!
+//! let stimulus: Array1<f64> = Array1::range(0., 10., 0.5);
+//! let num_data_points = stimulus.len();
+//! let response: Array1<f64> = stimulus
+//!     .iter()
+//!     .map(|x| a + b * x)
+//!     .collect();
+//!
+//! let problem = ProblemBuilder::new(stimulus.view(), response.view())
+//!     .build();
+//! ```
+//!
+//! A [`ProblemBuilder`] can also be attached by either variances, or covariances for the
+//! independent variable (response). Methods to attach and build with variances, or covariances on
+//! the dependent variable exist in the private API only, as these fit methods are unimplemented.
+//!
+
 use ndarray::{ArrayView1, ArrayView2};
 use ndarray_linalg::Scalar;
 use std::marker::PhantomData;
 
-// use crate::fit::{Covariance, PolyConstraint, Problem, ScoringStrategy};
-//
 use crate::problem::{Constraint, Covariance, Problem, ScoringStrategy};
 use crate::utils::{form_rescaled_variables, Rescaled};
 
 #[derive(Default)]
+/// Marker struct to indicate a field has been previously set.
 pub struct Set {}
 
 #[derive(Default)]
+/// Marker struct to indicate a field remains unset
 pub struct Unset {}
 
+/// Problem builder
+///
+/// The [`ProblemBuilder`] allows us to build a [`Problem`] from known inputs
+/// and uncertainties.
 pub struct ProblemBuilder<'a, E, DU, IU, DC, IC, C> {
+    /// Dependent or stimulus data
     dependent: ArrayView1<'a, E>,
+    /// Independent or response data
     independent: ArrayView1<'a, E>,
+    /// Dependent or stimulus data variances
     dependent_uncertainty: Option<ArrayView1<'a, E>>,
+    /// Independent or response data variances
     independent_uncertainty: Option<ArrayView1<'a, E>>,
+    /// Dependent or stimulus data covariances
     dependent_covariance: Option<ArrayView2<'a, E>>,
+    /// Independent or response data covariances
     independent_covariance: Option<ArrayView2<'a, E>>,
+    /// A polynomial constraint function
+    ///
+    /// The constraint, if present, alters the basis used for polynomial fitting. It can allow the
+    /// solver to restrict to the subspace of polynomial solutions satisfying the constraint.
     constraint: Option<C>,
+    /// Preferred scoring strategy to assess the suitability of fits.
     strategy: ScoringStrategy,
     typestate: PhantomData<(DU, IU, DC, IC, C)>,
 }
 
 impl<'a, E> ProblemBuilder<'a, E, Unset, Unset, Unset, Unset, Unset> {
+    /// Create a new [`ProblemBuilder`] from independent and dependent data.
+    ///
+    /// # Panics
+    /// - If the independent and dependent data provided contain unequal numbers of observations.
     pub fn new<V: Into<ArrayView1<'a, E>>>(independent: V, dependent: V) -> Self {
-        Self {
+        let builder = Self {
             dependent: dependent.into(),
             independent: independent.into(),
             dependent_uncertainty: None,
@@ -37,12 +82,20 @@ impl<'a, E> ProblemBuilder<'a, E, Unset, Unset, Unset, Unset, Unset> {
             constraint: None,
             strategy: ScoringStrategy::ChiSquare,
             typestate: PhantomData,
-        }
+        };
+
+        assert_eq!(
+            builder.dependent.len(),
+            builder.independent.len(),
+            "dependent and independent data must contain equal numbers of observations"
+        );
+        builder
     }
 }
 
 impl<'a, E, DU, IU, DC, IC, C> ProblemBuilder<'a, E, DU, IU, DC, IC, C> {
     #[must_use]
+    /// Attach a scoring strategy.
     pub const fn with_scoring_strategy(mut self, scoring_strategy: ScoringStrategy) -> Self {
         self.strategy = scoring_strategy;
         self

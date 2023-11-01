@@ -1,3 +1,16 @@
+//! Methods to calculate stimulus or response data from a known [`Fit`]
+//!
+//! Given a known [`Fit`], calculated using calibration data, we can predict new stimulus or
+//! response values given the alternative.
+//!
+//! To predict new response values from a known stimulus we simply evaluate the underlying
+//! polynomial series y = p_n(x); In the inverse case, to predict a new stimulus from a known
+//! response we numerically minimise abs(y - p_n(x)) to find the root.
+//!
+//! Both prediction methods take an [`Unsure`] as an argument. This represents a new value with an
+//! associated estimate and variance. They also return an [`Unsure`], propagating the error from
+//! the input and combining it with that on the calculated fitting coefficients.
+
 use argmin::{
     core::{
         observers::{ObserverMode, SlogLogger},
@@ -5,8 +18,9 @@ use argmin::{
     },
     solver::{linesearch::MoreThuenteLineSearch, newton::NewtonCG},
 };
-use ndarray::{Array1, Array2, ScalarOperand};
+use ndarray::{ArrayView1, Array1, Array2, ScalarOperand};
 use ndarray_linalg::{Lapack, Scalar};
+use ndarray_rand::{rand_distr::{Normal, StandardNormal, Distribution}, rand::Rng};
 use num_traits::float::FloatCore;
 use std::ops::Range;
 use tracing::{event, Level};
@@ -17,6 +31,8 @@ use crate::problem::Constraint;
 use crate::utils::to_scaled;
 use crate::{PolyCalError, PolyCalResult};
 
+#[derive(Clone, Debug)]
+/// The results of a polynomial fit.
 pub struct Fit<E> {
     /// The solution calculated using provided calibration data
     pub(crate) solution: Series<E>,
@@ -29,11 +45,80 @@ pub struct Fit<E> {
 }
 
 #[derive(Copy, Clone, Debug)]
+/// A value with associated estimate (expectation) and standard uncertainty.
 pub struct Unsure<E> {
     /// Central value, or mean, of the measurement
     pub estimate: E,
     /// Standard deviation of the measurement
     pub standard_uncertainty: E,
+}
+
+impl<E> Fit<E> {
+    /// Returns the range of stimulus values used in the calibration procedure.
+    ///
+    /// Calibrations are carried out on a finite region of parameter space. In the event a new
+    /// prediction is requested using an input value outside this calibration region an error will
+    /// be returned from the reconstrauction methods. Outside the calibration range the accuracy of
+    /// the reconstruction is entirely uncertain.
+    pub const fn stimulus_domain(&self) -> &Range<E> {
+        &self.solution.domain
+    }
+}
+
+impl<E: Scalar> Fit<E> {
+    /// The number of coefficients in the polynomial fit.
+    pub fn num_coeff(&self) -> usize {
+        self.solution.coeff.len()
+    }
+
+    /// The coefficients associated with the underlying Chebyshev series
+    pub fn coeff(&self) -> Vec<E> {
+        self.solution.coeff()
+    }
+
+    /// The variance of the coefficients of the underlying Chebyshev series
+    pub fn variance(&self) -> ArrayView1<'_, E> {
+        self.covariance.diag()
+    }
+}
+
+impl<E: num_traits::Float + Scalar<Real = E>> Fit<E>
+where
+    StandardNormal: Distribution<E>,
+{
+    fn draw<R: Rng>(&self, rng: &mut R) -> Self {
+        let coeff = self.solution.coeff();
+        let var = self.covariance.diag();
+
+        let mut fit = self.clone();
+
+        let sampled_coeff = coeff.into_iter()
+            .zip(var)
+            .map(|(mean, var)| Normal::new(mean, Scalar::sqrt(*var)))
+            .map(|maybe_dist| match maybe_dist {
+                Ok(dist) => Ok(dist.sample(rng)),
+                Err(e) => Err(e),
+            })
+            .collect::<Result<_,_>>()
+            .unwrap();
+
+
+        fit.solution.set_coeff(sampled_coeff);
+        fit
+    }
+
+    /// Given a new set of coefficients, creates a new [`Fit`] with those as the central estimates.
+    ///
+    /// This method is helpful for callers who want to use a [`Fit`] result in a Monte Carlo
+    /// method. Samples generated externally can be inserted into the [`Fit`] allowing the
+    /// reconstruction methods to be utilised.
+    pub fn from_coeff(&self, coeff: &[E]) -> Self {
+        assert_eq!(coeff.len(), self.num_coeff());
+        let mut fit = self.clone();
+        fit.solution.set_coeff(coeff.to_vec());
+        fit
+    }
+
 }
 
 impl<E: Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd + tracing::Value>
@@ -56,7 +141,7 @@ impl<E: Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd + tra
                 kind: Kind::Stimulus,
             });
         }
-        let t = to_scaled(stimulus.estimate, self.domain());
+        let t = to_scaled(stimulus.estimate, self.stimulus_domain());
 
         event!(Level::INFO, scaled = t, "evaluating series");
         let estimate = self.evaluate_direct(t);
@@ -69,6 +154,61 @@ impl<E: Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd + tra
             estimate,
             standard_uncertainty,
         })
+    }
+
+    /// Direct evaluation y = `p_n(x`, a)
+    ///
+    /// Given a new stimulus value, estimate the response observed from the given calibration
+    /// curve. This method assumes the input to have no associated error, and does not calculate an
+    /// associated error for the output.
+    ///
+    /// # Errors
+    /// If the provided stimulus lies outside the data-range used to form the calibration
+    /// this method returns an error.
+    #[tracing::instrument(skip(self))]
+    pub fn certain_response(&self, stimulus: E) -> PolyCalResult<E, E> {
+        if !self.solution().domain().contains(&stimulus) {
+            return Err(PolyCalError::OutOfRange {
+                value: stimulus,
+                range: self.solution().domain(),
+                kind: Kind::Stimulus,
+            });
+        }
+        let t = to_scaled(stimulus, self.stimulus_domain());
+
+        let estimate = self.evaluate_direct(t);
+
+        Ok(
+            estimate,
+        )
+    }
+
+    /// Direct evaluation of the derivative y' = `p_n'(x`, a)
+    ///
+    /// Given a new stimulus value, estimate the derivative of the response observed from the given
+    /// calibration curve. This method assumes the input to have no associated error, and does not
+    /// calculate an associated error for the output. This is useful for constructing Jacobians
+    /// using the results of a fit.
+    ///
+    /// # Errors
+    /// If the provided stimulus lies outside the data-range used to form the calibration
+    /// this method returns an error.
+    #[tracing::instrument(skip(self))]
+    pub fn certain_response_derivative(&self, stimulus: E) -> PolyCalResult<E, E> {
+        if !self.solution().domain().contains(&stimulus) {
+            return Err(PolyCalError::OutOfRange {
+                value: stimulus,
+                range: self.solution().domain(),
+                kind: Kind::Stimulus,
+            });
+        }
+        let t = to_scaled(stimulus, self.stimulus_domain());
+
+        let estimate = self.evaluate_direct_derivative(t);
+
+        Ok(
+            estimate,
+        )
     }
 }
 
@@ -121,7 +261,7 @@ where
             self.evaluate_inverse_uncertainty(scaled_estimate, response.standard_uncertainty);
 
         // Scale back to the true data type
-        let estimate = crate::utils::to_unscaled(scaled_estimate, self.domain());
+        let estimate = crate::utils::to_unscaled(scaled_estimate, self.stimulus_domain());
         let standard_uncertainty = estimate / scaled_estimate * scaled_standard_uncertainty;
         Ok(Unsure {
             estimate,
@@ -131,18 +271,17 @@ where
 }
 
 impl<E> Fit<E> {
-    pub(crate) const fn domain(&self) -> &Range<E> {
-        &self.solution.domain
-    }
-
+    /// Retusn the underlying solution
     pub(crate) const fn solution(&self) -> &Series<E> {
         &self.solution
     }
 
+    /// Return the underlying constraint
     pub(crate) const fn constraint(&self) -> Option<&Constraint<E>> {
         self.constraint.as_ref()
     }
 }
+
 
 impl<E: Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd> Fit<E> {
     pub(crate) fn evaluate_direct(&self, t: E) -> E {
@@ -155,9 +294,19 @@ impl<E: Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd> Fit<
         )
     }
 
+    pub(crate) fn evaluate_direct_derivative(&self, t: E) -> E {
+        self.constraint().map_or_else(
+            || self.solution.derivative(1).evaluate(t),
+            |constraint| {
+                let poly = self.solution.clone() * constraint.multiplicative.clone() + constraint.additive.clone();
+                poly.derivative(1).evaluate(t)
+            },
+        )
+    }
+
     #[allow(clippy::suspicious_operation_groupings)]
     fn q(&self, t: E) -> E {
-        let Range { start, end } = self.domain();
+        let Range { start, end } = self.stimulus_domain();
         let series = self.constraint.as_ref().map_or_else(
             || self.solution.clone(),
             |constraint| {
@@ -219,7 +368,7 @@ impl<'a, E> InverseProblemBuilder<'a, E>
 where
     E: Scalar<Real = E>,
 {
-    fn new(y0: E, problem: &'a Series<E>) -> Self {
+    const fn new(y0: E, problem: &'a Series<E>) -> Self {
         Self {
             y0,
             problem,
@@ -227,7 +376,7 @@ where
         }
     }
 
-    fn with_constraint(mut self, constraint: Option<&'a Constraint<E>>) -> Self {
+    const fn with_constraint(mut self, constraint: Option<&'a Constraint<E>>) -> Self {
         self.constraint = constraint;
         self
     }

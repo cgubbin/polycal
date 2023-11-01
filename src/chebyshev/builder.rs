@@ -20,7 +20,7 @@ pub struct ChebyshevBuilder<C, D, W> {
 }
 
 impl ChebyshevBuilder<Unset, Unset, Unset> {
-    pub(crate) const fn new(degree: usize) -> Self {
+    pub const fn new(degree: usize) -> Self {
         Self {
             degree,
             coeff: Unset {},
@@ -31,7 +31,7 @@ impl ChebyshevBuilder<Unset, Unset, Unset> {
 }
 
 impl<D, W> ChebyshevBuilder<Unset, D, W> {
-    pub(crate) fn with_coefficients<E, C: Into<Vec<E>>>(
+    pub fn with_coefficients<E, C: Into<Vec<E>>>(
         self,
         coefficients: C,
     ) -> ChebyshevBuilder<Vec<E>, D, W> {
@@ -45,7 +45,7 @@ impl<D, W> ChebyshevBuilder<Unset, D, W> {
 }
 
 impl<E, W> ChebyshevBuilder<Vec<E>, Unset, W> {
-    pub(crate) fn on_domain(self, domain: Range<E>) -> ChebyshevBuilder<Vec<E>, Range<E>, W> {
+    pub fn on_domain(self, domain: Range<E>) -> ChebyshevBuilder<Vec<E>, Range<E>, W> {
         ChebyshevBuilder {
             degree: self.degree,
             coeff: self.coeff,
@@ -56,7 +56,7 @@ impl<E, W> ChebyshevBuilder<Vec<E>, Unset, W> {
 }
 
 impl<E: FloatCore + PartialOrd + Clone, W> ChebyshevBuilder<Vec<E>, Unset, W> {
-    pub(crate) fn on_domain_from(
+    pub fn on_domain_from(
         self,
         independent: &[E],
     ) -> Result<ChebyshevBuilder<Vec<E>, Range<E>, W>, ChebyshevError> {
@@ -109,7 +109,7 @@ impl ChebyshevBuilder<Unset, Unset, Unset> {
 }
 
 impl<E: Scalar<Real = E>> ChebyshevBuilder<Vec<E>, Range<E>, Unset> {
-    pub(crate) fn build(self) -> Series<E> {
+    pub fn build(self) -> Series<E> {
         Series {
             basis: Basis::new(self.degree),
             coeff: self.coeff.into(),

@@ -7,9 +7,12 @@ pub use basis::{Basis, ConstrainedPolynomial, Polynomial};
 
 #[allow(clippy::module_name_repetitions)]
 pub use builder::ChebyshevBuilder;
+use ndarray_linalg::Scalar;
 use primitive::CSeries;
 pub use series::Series;
 use std::ops::Range;
+
+use crate::utils::to_scaled;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ChebyshevError {
@@ -21,7 +24,7 @@ pub enum ChebyshevError {
     Shape(ndarray::ShapeError),
 }
 
-pub trait PolynomialSeries<E: PartialOrd>: Clone + Sized {
+pub trait PolynomialSeries<E: PartialOrd + Scalar<Real = E>>: Clone + Sized {
     fn derivative(&self, count: usize) -> Self {
         match count {
             // zero order just returns the current Series
@@ -44,6 +47,10 @@ pub trait PolynomialSeries<E: PartialOrd>: Clone + Sized {
         Ok(!self.roots()?.iter().any(|root| window.contains(root)))
     }
     fn evaluate(&self, t: E) -> E;
+    fn evaluate_unscaled(&self, x: E) -> E {
+        let t = to_scaled(x, &self.domain());
+        self.evaluate(t)
+    }
     fn first_derivative(&self) -> Self;
     fn degree(&self) -> usize;
     fn number_of_coefficients(&self) -> usize {

@@ -16,6 +16,10 @@ impl<E: Clone> Series<E> {
     pub(crate) fn coeff(&self) -> Vec<E> {
         self.coeff.inner().to_vec()
     }
+
+    pub(crate) fn set_coeff(&mut self, coeff: Vec<E>) {
+        self.coeff = coeff.into();
+    }
 }
 
 impl<E: Scalar<Real = E>> std::ops::Mul for Series<E> {
