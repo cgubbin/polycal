@@ -86,7 +86,15 @@ impl<E: num_traits::Float + Scalar<Real = E>> Fit<E>
 where
     StandardNormal: Distribution<E>,
 {
-    fn draw<R: Rng>(&self, rng: &mut R) -> Self {
+    /// Create a new [`Fit`] randomly using the known estimates and variances.
+    ///
+    /// Note that the [`Fit`] returned by this method should not be re-used in this function. The
+    /// underlying expectations are replaced, and are no longer a good estimate of the central
+    /// values of the distribution.
+    ///
+    /// # Panics
+    /// - If distribution creation fails (unlikely)
+    pub fn draw<R: Rng>(&self, rng: &mut R) -> Self {
         let coeff = self.solution.coeff();
         let var = self.covariance.diag();
 
