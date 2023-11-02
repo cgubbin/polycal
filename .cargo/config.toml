@@ -1,0 +1,12 @@
+[registries.sensorium-tl]
+index = "ssh://git@ssh.shipyard.rs/sensorium-tl/crate-index.git"
+
+[unstable]
+registry-auth = true
+
+[http]
+user-agent = "shipyard ZJclPdOdnDfM7YHywj8JZ5AH+5ubOK4OIeRl7+uj82xBftK4qZkFEcf+QJkNEfE6XTo="
+
+[net]
+git-fetch-with-cli = true
+
