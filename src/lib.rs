@@ -113,12 +113,12 @@ pub type PolyCalResult<T, E> = ::std::result::Result<T, PolyCalError<E>>;
 
 pub use builder::ProblemBuilder;
 pub use calculate::{Fit, Unsure};
+pub use chebyshev::{ChebyshevBuilder, PolynomialSeries, Series};
 pub use error::PolyCalError;
 pub use problem::{Constraint, Problem, ScoringStrategy};
-pub use chebyshev::{ChebyshevBuilder, PolynomialSeries, Series};
 
 pub use argmin::core::ArgminFloat;
 
 pub use argmin_math::{
-    ArgminAdd, ArgminZeroLike, ArgminSub, ArgminConj, ArgminMul, ArgminL2Norm, ArgminDot
+    ArgminAdd, ArgminConj, ArgminDot, ArgminL2Norm, ArgminMul, ArgminSub, ArgminZeroLike,
 };

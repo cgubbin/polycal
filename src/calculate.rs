@@ -18,9 +18,12 @@ use argmin::{
     },
     solver::{linesearch::MoreThuenteLineSearch, newton::NewtonCG},
 };
-use ndarray::{ArrayView1, Array1, Array2, ScalarOperand};
+use ndarray::{Array1, Array2, ArrayView1, ScalarOperand};
 use ndarray_linalg::{Lapack, Scalar};
-use ndarray_rand::{rand_distr::{Normal, StandardNormal, Distribution}, rand::Rng};
+use ndarray_rand::{
+    rand::Rng,
+    rand_distr::{Distribution, Normal, StandardNormal},
+};
 use num_traits::float::FloatCore;
 use std::ops::Range;
 use tracing::{event, Level};
@@ -100,16 +103,16 @@ where
 
         let mut fit = self.clone();
 
-        let sampled_coeff = coeff.into_iter()
+        let sampled_coeff = coeff
+            .into_iter()
             .zip(var)
             .map(|(mean, var)| Normal::new(mean, Scalar::sqrt(*var)))
             .map(|maybe_dist| match maybe_dist {
                 Ok(dist) => Ok(dist.sample(rng)),
                 Err(e) => Err(e),
             })
-            .collect::<Result<_,_>>()
+            .collect::<Result<_, _>>()
             .unwrap();
-
 
         fit.solution.set_coeff(sampled_coeff);
         fit
@@ -126,7 +129,6 @@ where
         fit.solution.set_coeff(coeff.to_vec());
         fit
     }
-
 }
 
 impl<E: Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd + tracing::Value>
@@ -186,9 +188,7 @@ impl<E: Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd + tra
 
         let estimate = self.evaluate_direct(t);
 
-        Ok(
-            estimate,
-        )
+        Ok(estimate)
     }
 
     /// Direct evaluation of the derivative y' = `p_n'(x`, a)
@@ -214,9 +214,7 @@ impl<E: Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd + tra
 
         let estimate = self.evaluate_direct_derivative(t);
 
-        Ok(
-            estimate,
-        )
+        Ok(estimate)
     }
 }
 
@@ -290,7 +288,6 @@ impl<E> Fit<E> {
     }
 }
 
-
 impl<E: Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd> Fit<E> {
     pub(crate) fn evaluate_direct(&self, t: E) -> E {
         self.constraint().map_or_else(
@@ -306,7 +303,8 @@ impl<E: Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd> Fit<
         self.constraint().map_or_else(
             || self.solution.derivative(1).evaluate(t),
             |constraint| {
-                let poly = self.solution.clone() * constraint.multiplicative.clone() + constraint.additive.clone();
+                let poly = self.solution.clone() * constraint.multiplicative.clone()
+                    + constraint.additive.clone();
                 poly.derivative(1).evaluate(t)
             },
         )
@@ -396,13 +394,14 @@ where
                 |Constraint {
                      multiplicative,
                      additive,
-                 }| self.problem.clone() * multiplicative.clone() + additive.clone(),
-                ),
-            y0: self.y0
+                 }| {
+                    self.problem.clone() * multiplicative.clone() + additive.clone()
+                },
+            ),
+            y0: self.y0,
         }
     }
 }
-
 
 impl<E: ArgminFloat + Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd>
     CostFunction for InverseProblem<E>
@@ -418,8 +417,8 @@ impl<E: ArgminFloat + Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + Pa
     }
 }
 
-impl<E: ArgminFloat + Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd>
-    Gradient for InverseProblem<E>
+impl<E: ArgminFloat + Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd> Gradient
+    for InverseProblem<E>
 {
     type Param = E;
     type Gradient = E;
@@ -433,8 +432,8 @@ impl<E: ArgminFloat + Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + Pa
     }
 }
 
-impl<E: ArgminFloat + Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd>
-    Hessian for InverseProblem<E>
+impl<E: ArgminFloat + Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd> Hessian
+    for InverseProblem<E>
 {
     type Param = E;
     type Hessian = E;
@@ -607,7 +606,10 @@ mod test {
 
         let combined = series.clone() * constraint.clone();
 
-        let y = x.iter().map(|x| combined.evaluate(*x)).collect::<Array1<E>>();
+        let y = x
+            .iter()
+            .map(|x| combined.evaluate(*x))
+            .collect::<Array1<E>>();
 
         (x, y, series, constraint)
     }
@@ -662,13 +664,17 @@ mod test {
             end: 1.,
         };
 
-        let (x, y, series, constraint) = generate_data_passing_through_origin(&mut rng, domain, number_of_data_points, degree);
+        let (x, y, series, constraint) =
+            generate_data_passing_through_origin(&mut rng, domain, number_of_data_points, degree);
         let covariance = Array2::zeros((degree + 1, degree + 1));
 
         let fit = Fit {
             solution: series,
             covariance,
-            constraint: Some(Constraint { multiplicative: constraint, additive: Series::from_coeff(vec![0.0], x.as_slice().unwrap()) }),
+            constraint: Some(Constraint {
+                multiplicative: constraint,
+                additive: Series::from_coeff(vec![0.0], x.as_slice().unwrap()),
+            }),
             response_domain: find_limits(y.as_slice().unwrap()),
         };
 
@@ -754,7 +760,12 @@ mod test {
 
         // We need a monotonic training function
         loop {
-            let (x, y, series, constraint) = generate_data_passing_through_origin(&mut rng, domain.clone(), number_of_data_points, degree);
+            let (x, y, series, constraint) = generate_data_passing_through_origin(
+                &mut rng,
+                domain.clone(),
+                number_of_data_points,
+                degree,
+            );
             let combined = series.clone() * constraint.clone();
             if combined
                 .is_monotonic()
@@ -776,7 +787,10 @@ mod test {
         let fit = Fit {
             solution: series,
             covariance,
-            constraint: Some(Constraint { multiplicative: constraint, additive: Series::from_coeff(vec![0.0], x.as_slice().unwrap()) }),
+            constraint: Some(Constraint {
+                multiplicative: constraint,
+                additive: Series::from_coeff(vec![0.0], x.as_slice().unwrap()),
+            }),
             response_domain: find_limits(y.as_slice().unwrap()),
         };
 
@@ -855,13 +869,17 @@ mod test {
             end: 1.,
         };
 
-        let (x, y, series, constraint) = generate_data_passing_through_origin(&mut rng, domain, number_of_data_points, degree);
+        let (x, y, series, constraint) =
+            generate_data_passing_through_origin(&mut rng, domain, number_of_data_points, degree);
         let covariance = Array2::zeros((degree + 1, degree + 1));
 
         let fit = Fit {
             solution: series,
             covariance,
-            constraint: Some(Constraint { multiplicative: constraint, additive: Series::from_coeff(vec![0.0], x.as_slice().unwrap()) }),
+            constraint: Some(Constraint {
+                multiplicative: constraint,
+                additive: Series::from_coeff(vec![0.0], x.as_slice().unwrap()),
+            }),
             response_domain: find_limits(y.as_slice().unwrap()),
         };
 
@@ -969,7 +987,12 @@ mod test {
 
         // We need a monotonic training function
         loop {
-            let (x, y, series, constraint) = generate_data_passing_through_origin(&mut rng, domain.clone(), number_of_data_points, degree);
+            let (x, y, series, constraint) = generate_data_passing_through_origin(
+                &mut rng,
+                domain.clone(),
+                number_of_data_points,
+                degree,
+            );
             let combined = series.clone() * constraint.clone();
             if combined
                 .is_monotonic()
@@ -991,7 +1014,10 @@ mod test {
         let fit = Fit {
             solution: series,
             covariance,
-            constraint: Some(Constraint { multiplicative: constraint, additive: Series::from_coeff(vec![0.0], x.as_slice().unwrap()) }),
+            constraint: Some(Constraint {
+                multiplicative: constraint,
+                additive: Series::from_coeff(vec![0.0], x.as_slice().unwrap()),
+            }),
             response_domain: find_limits(y.as_slice().unwrap()),
         };
 
@@ -1106,7 +1132,12 @@ mod test {
 
         // We need a monotonic training function
         loop {
-            let (x, y, series, constraint) = generate_data_passing_through_origin(&mut rng, domain.clone(), number_of_data_points, degree);
+            let (x, y, series, constraint) = generate_data_passing_through_origin(
+                &mut rng,
+                domain.clone(),
+                number_of_data_points,
+                degree,
+            );
             let combined = series.clone() * constraint.clone();
             if combined
                 .is_monotonic()
@@ -1128,7 +1159,10 @@ mod test {
         let fit = Fit {
             solution: series,
             covariance,
-            constraint: Some(Constraint { multiplicative: constraint, additive: Series::from_coeff(vec![0.0], x.as_slice().unwrap()) }),
+            constraint: Some(Constraint {
+                multiplicative: constraint,
+                additive: Series::from_coeff(vec![0.0], x.as_slice().unwrap()),
+            }),
             response_domain: find_limits(y.as_slice().unwrap()),
         };
 

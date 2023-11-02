@@ -155,7 +155,8 @@ where
 
             let index_of_lowest_order_acceptable_solution = scores
                 .iter()
-                .position(|&score| score < E::epsilon()).unwrap();
+                .position(|&score| score < E::epsilon())
+                .unwrap();
 
             let best_fit = fits.swap_remove(index_of_lowest_order_acceptable_solution);
 
@@ -163,7 +164,6 @@ where
             dbg!(&best_fit.solution);
 
             Ok((best_score, best_fit))
-
         } else {
             let best_score = *scores
                 .iter()
