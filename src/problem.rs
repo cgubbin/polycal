@@ -54,7 +54,7 @@ pub struct Constraint<E> {
 
 /// Problem abstraction
 ///
-/// Problems are created using a [`ProblemBuilder`] which ensures the type-state of uncertainties
+/// Problems are created using a [`crate::ProblemBuilder`] which ensures the type-state of uncertainties
 /// is consistent.
 pub struct Problem<'a, E> {
     pub(crate) t: Array1<E>,
