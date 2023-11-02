@@ -4,8 +4,8 @@
 //! response values given the alternative.
 //!
 //! To predict new response values from a known stimulus we simply evaluate the underlying
-//! polynomial series y = p_n(x); In the inverse case, to predict a new stimulus from a known
-//! response we numerically minimise abs(y - p_n(x)) to find the root.
+//! polynomial series y = `p_n(x`); In the inverse case, to predict a new stimulus from a known
+//! response we numerically minimise abs(y - `p_n(x`)) to find the root.
 //!
 //! Both prediction methods take an [`Unsure`] as an argument. This represents a new value with an
 //! associated estimate and variance. They also return an [`Unsure`], propagating the error from
@@ -97,6 +97,7 @@ where
     ///
     /// # Panics
     /// - If distribution creation fails (unlikely)
+    #[must_use]
     pub fn draw<R: Rng>(&self, rng: &mut R) -> Self {
         let coeff = self.solution.coeff();
         let var = self.covariance.diag();
@@ -123,6 +124,11 @@ where
     /// This method is helpful for callers who want to use a [`Fit`] result in a Monte Carlo
     /// method. Samples generated externally can be inserted into the [`Fit`] allowing the
     /// reconstruction methods to be utilised.
+    ///
+    /// # Panics
+    /// - If the length of the passed coefficient vector is not equal to the number of coefficients
+    /// associated with the polynomial.
+    #[must_use]
     pub fn from_coeff(&self, coeff: &[E]) -> Self {
         assert_eq!(coeff.len(), self.num_coeff());
         let mut fit = self.clone();

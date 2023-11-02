@@ -42,7 +42,7 @@ pub enum Covariance<'a, E> {
 #[derive(Clone, Debug)]
 /// A constraint.
 ///
-/// Given a constraint we use the problem y = p_n(x, a) * multiplicative(x) + additive(x). A
+/// Given a constraint we use the problem y = `p_n(x`, a) * multiplicative(x) + additive(x). A
 /// carefully constructed constraint can ensure the response variable and it's derivatives obeys
 /// certain pre-conditions such as passing through the origin.
 pub struct Constraint<E> {
@@ -115,7 +115,7 @@ where
             num_failures = n_max - fits.len(),
             "finding best fit"
         );
-        let (_best_score, best_fit) = self.find_best_fit(fits)?;
+        let (_best_score, best_fit) = self.find_best_fit(fits);
 
         // TODO: Chi-2 validation at nu = m - n - 1
 
@@ -125,7 +125,7 @@ where
     fn find_best_fit(
         &self,
         mut fits: Vec<Fit<E>>,
-    ) -> ::std::result::Result<(E, Fit<E>), PolyCalError<E>> {
+    ) -> (E, Fit<E>) {
         let scores = fits
             .iter()
             .map(|fit| self.score(fit.solution()))
@@ -160,10 +160,7 @@ where
 
             let best_fit = fits.swap_remove(index_of_lowest_order_acceptable_solution);
 
-            dbg!(&best_score);
-            dbg!(&best_fit.solution);
-
-            Ok((best_score, best_fit))
+            (best_score, best_fit)
         } else {
             let best_score = *scores
                 .iter()
@@ -180,7 +177,7 @@ where
 
             let best_fit = fits.swap_remove(index);
 
-            Ok((best_score, best_fit))
+            (best_score, best_fit)
         }
     }
 

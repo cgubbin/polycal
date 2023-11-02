@@ -20,6 +20,7 @@ impl<'a, E: Lapack + Scalar<Real = E> + ScalarOperand> SolveSystem<E> for TotalL
 }
 
 impl<'a, E: Lapack + Scalar<Real = E> + ScalarOperand> TotalLeastSquares<'a, E> {
+    #[allow(clippy::unused_self)]
     fn solve_diagonal(
         &self,
         _ux: ArrayView1<'a, E>,
@@ -28,6 +29,7 @@ impl<'a, E: Lapack + Scalar<Real = E> + ScalarOperand> TotalLeastSquares<'a, E> 
         unimplemented!("no diagonal TLS impl");
     }
 
+    #[allow(clippy::unused_self)]
     fn solve_full_rank(
         &self,
         _vx: ArrayView2<'a, E>,

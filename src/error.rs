@@ -8,6 +8,7 @@ pub enum Kind {
     Response,
 }
 
+#[allow(clippy::module_name_repetitions)]
 #[derive(Debug, thiserror::Error)]
 pub enum PolyCalError<E> {
     /// The input value was outside of the calibration range, so a prediction cannot be reliably

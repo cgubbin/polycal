@@ -45,6 +45,7 @@ pub struct Unset {}
 ///
 /// The [`ProblemBuilder`] allows us to build a [`Problem`] from known inputs
 /// and uncertainties.
+#[allow(clippy::module_name_repetitions)]
 pub struct ProblemBuilder<'a, E, DU, IU, DC, IC, C> {
     /// Dependent or stimulus data
     dependent: ArrayView1<'a, E>,

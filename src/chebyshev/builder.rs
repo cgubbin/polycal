@@ -20,7 +20,7 @@ pub struct ChebyshevBuilder<C, D, W> {
 }
 
 impl ChebyshevBuilder<Unset, Unset, Unset> {
-    pub const fn new(degree: usize) -> Self {
+    #[must_use] pub const fn new(degree: usize) -> Self {
         Self {
             degree,
             coeff: Unset {},
@@ -56,6 +56,10 @@ impl<E, W> ChebyshevBuilder<Vec<E>, Unset, W> {
 }
 
 impl<E: FloatCore + PartialOrd + Clone, W> ChebyshevBuilder<Vec<E>, Unset, W> {
+    /// Attach a domain, constructed from the polynomial's x-values
+    ///
+    /// # Errors
+    /// - If the provided independent variables contain infinities or NaN values.
     pub fn on_domain_from(
         self,
         independent: &[E],
