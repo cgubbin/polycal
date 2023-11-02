@@ -20,7 +20,8 @@ pub struct ChebyshevBuilder<C, D, W> {
 }
 
 impl ChebyshevBuilder<Unset, Unset, Unset> {
-    #[must_use] pub const fn new(degree: usize) -> Self {
+    #[must_use]
+    pub const fn new(degree: usize) -> Self {
         Self {
             degree,
             coeff: Unset {},

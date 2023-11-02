@@ -122,10 +122,7 @@ where
         Ok(best_fit)
     }
 
-    fn find_best_fit(
-        &self,
-        mut fits: Vec<Fit<E>>,
-    ) -> (E, Fit<E>) {
+    fn find_best_fit(&self, mut fits: Vec<Fit<E>>) -> (E, Fit<E>) {
         let scores = fits
             .iter()
             .map(|fit| self.score(fit.solution()))

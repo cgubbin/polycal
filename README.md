@@ -1,3 +1,5 @@
+[![codecov](https://codecov.io/gh/sensoriumtl/polycal/graph/badge.svg?token=6FRPE3DXWO)](https://codecov.io/gh/sensoriumtl/polycal)
+
 # Polycal
 ---
 Methods for determining, verifying and using polynomial calibration curves. The methods used conform as closely as possible to ISO/TS 28038.
