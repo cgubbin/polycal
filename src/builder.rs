@@ -10,6 +10,8 @@
 //!
 //! let stimulus: Array1<f64> = Array1::range(0., 10., 0.5);
 //! let num_data_points = stimulus.len();
+//! let a: f64 = 1.0;
+//! let b: f64 = 2.0;
 //! let response: Array1<f64> = stimulus
 //!     .iter()
 //!     .map(|x| a + b * x)
