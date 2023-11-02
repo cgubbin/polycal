@@ -23,7 +23,7 @@ pub fn form_rescaled_variables<E: PartialOrd + Scalar>(x: ArrayView1<'_, E>) -> 
     Rescaled { t, domain }
 }
 
-/// Returns the range spanning the minimium and maximum of the `variable`
+/// Returns the range spanning the minimum and maximum of the `variable`
 ///
 /// # Panics
 ///

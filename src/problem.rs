@@ -174,7 +174,7 @@ where
                 .map(|score| score - best_score)
                 .collect::<Vec<_>>();
 
-            // Can't fail as we just substracted the best score: this means one element will always be
+            // Can't fail as we just subtracted the best score: this means one element will always be
             // zero
             let index = scores.iter().position(|&score| score == E::zero()).unwrap();
 
