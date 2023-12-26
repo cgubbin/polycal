@@ -18,7 +18,7 @@ argmin-math = "0.3.0"
 tracing = "0.1.40"
 ndarray-rand = "0.14.0"
 rand_isaac = "0.3.0"
-thiserror = "1.0.50"
+thiserror = "1.0.52"
 
 [dev-dependencies]
 approx = "0.5.1"
