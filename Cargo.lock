@@ -34,9 +34,9 @@ dependencies = [
 
 [[package]]
 name = "argmin"
-version = "0.8.1"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "897c18cfe995220bdd94a27455e5afedc7c688cbf62ad2be88ce7552452aa1b2"
+checksum = "523c0b5258fa1fb9072748b7306fb0db1625cf235ec6da4d05de2560ef56f882"
 dependencies = [
  "anyhow",
  "argmin-math",
