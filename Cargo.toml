@@ -11,7 +11,7 @@ ndarray = { version = "0.15", features = ["blas"] }
 blas-src = { version = "0.9", features = ["openblas"] }
 openblas-src = { version = "0.10", features = ["cblas", "system"] }
 
-argmin = { version = "0.8.1", features = ["_ndarrayl"] }
+argmin = { version = "0.10.0", features = ["_ndarrayl"] }
 ndarray-linalg = "0.16.0"
 num-traits = "0.2.17"
 argmin-math = "0.3.0"
