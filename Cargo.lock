@@ -39,7 +39,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "897c18cfe995220bdd94a27455e5afedc7c688cbf62ad2be88ce7552452aa1b2"
 dependencies = [
  "anyhow",
- "argmin-math",
+ "argmin-math 0.3.0",
  "bincode",
  "instant",
  "num-traits",
@@ -65,6 +65,21 @@ dependencies = [
  "cfg-if",
  "ndarray",
  "ndarray-linalg",
+ "num-complex",
+ "num-integer",
+ "num-traits",
+ "rand",
+ "thiserror",
+]
+
+[[package]]
+name = "argmin-math"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d93a0d0269b60bd1cd674de70314e3f0da97406cf8c1936ce760d2a46e0f13fe"
+dependencies = [
+ "anyhow",
+ "cfg-if",
  "num-complex",
  "num-integer",
  "num-traits",
@@ -671,7 +686,7 @@ version = "0.1.0"
 dependencies = [
  "approx 0.5.1",
  "argmin",
- "argmin-math",
+ "argmin-math 0.4.0",
  "blas-src",
  "ndarray",
  "ndarray-linalg",
