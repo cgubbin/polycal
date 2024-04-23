@@ -369,7 +369,7 @@ impl<'a, E: PartialOrd + Scalar> ProblemBuilder<'a, E, Unset, Unset, Set, Set, U
 impl<'a, E: PartialOrd + Scalar, C: Into<Constraint<E>>>
     ProblemBuilder<'a, E, Unset, Unset, Unset, Unset, C>
 {
-    fn build(self) -> Problem<'a, E> {
+    pub fn build(self) -> Problem<'a, E> {
         let Rescaled { t, domain } = form_rescaled_variables(self.independent);
 
         Problem {

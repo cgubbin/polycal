@@ -69,6 +69,16 @@ impl<E> Fit<E> {
 }
 
 impl<E: Scalar> Fit<E> {
+    // Returns the width of the response domain
+    //
+    // This is used when we solve numerically for the root of the equation system. It is useful in
+    // that case to rescale the cost function, jacobian and hessian by the width of the domain. If
+    // not then the calculation may not advance, as the gradient may be too small to show
+    // improvement.
+    fn solver_scaling(&self) -> E {
+        E::one() / (self.response_domain.end - self.response_domain.start)
+    }
+
     /// The number of coefficients in the polynomial fit.
     pub fn num_coeff(&self) -> usize {
         self.solution.coeff.len()
@@ -269,12 +279,12 @@ where
         let scaled_estimate = self.evaluate_inverse(response.estimate, guess, max_iter)?;
 
         event!(Level::INFO, "evaluating uncertainty");
-        let scaled_standard_uncertainty =
-            self.evaluate_inverse_uncertainty(scaled_estimate, response.standard_uncertainty);
+        let standard_uncertainty = Scalar::abs(
+            self.evaluate_inverse_uncertainty(scaled_estimate, response.standard_uncertainty),
+        );
 
         // Scale back to the true data type
         let estimate = crate::utils::to_unscaled(scaled_estimate, self.stimulus_domain());
-        let standard_uncertainty = estimate / scaled_estimate * scaled_standard_uncertainty;
         Ok(Unsure {
             estimate,
             standard_uncertainty,
@@ -299,6 +309,7 @@ impl<E: Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd> Fit<
         self.constraint().map_or_else(
             || self.solution.evaluate(t),
             |constraint| {
+                dbg!(&t);
                 self.solution.evaluate(t) * constraint.multiplicative.evaluate(t)
                     + constraint.additive.evaluate(t)
             },
@@ -317,7 +328,7 @@ impl<E: Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd> Fit<
     }
 
     #[allow(clippy::suspicious_operation_groupings)]
-    fn q(&self, t: E) -> E {
+    fn q(&self, scaled_root: E) -> E {
         let Range { start, end } = self.stimulus_domain();
         let series = self.constraint.as_ref().map_or_else(
             || self.solution.clone(),
@@ -326,53 +337,59 @@ impl<E: Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd> Fit<
                     + constraint.additive.clone()
             },
         );
-        (E::one() + E::one()) / (*end - *start) * series.derivative(1).evaluate(t)
+        (E::one() + E::one()) / (*end - *start) * series.derivative(1).evaluate(scaled_root)
     }
 
-    pub(crate) fn evaluate_direct_uncertainty(&self, t: E, uncertainty_x: E) -> E {
+    pub(crate) fn evaluate_direct_uncertainty(&self, scaled_root: E, uncertainty_x: E) -> E {
         let g: Array1<E> = self.constraint.as_ref().map_or_else(
-            || self.solution.basis.polynomials(t).into(),
+            || self.solution.basis.polynomials(scaled_root).into(),
             |constraint| {
                 self.solution
                     .basis
-                    .polynomials(t)
+                    .polynomials(scaled_root)
                     .into_iter()
-                    .map(|poly| poly * constraint.multiplicative.evaluate(t))
+                    .map(|poly| poly * constraint.multiplicative.evaluate(scaled_root))
                     .collect()
             },
         );
 
-        (Scalar::powi(self.q(t), 2) * Scalar::powi(uncertainty_x, 2)
+        (Scalar::powi(self.q(scaled_root), 2) * Scalar::powi(uncertainty_x, 2)
             + g.dot(&self.covariance.dot(&g)))
         .sqrt()
     }
 
-    pub(crate) fn evaluate_inverse_uncertainty(&self, t: E, uncertainty_y: E) -> E {
+    // Uncertainty in the stimulus variable. This is in the *true* stimulus variable, and does not
+    // require rescaling after the function return.
+    pub(crate) fn evaluate_inverse_uncertainty(&self, scaled_root: E, uncertainty_y: E) -> E {
         let g: Array1<E> = self.constraint.as_ref().map_or_else(
-            || self.solution.basis.polynomials(t).into(),
+            || self.solution.basis.polynomials(scaled_root).into(),
             |constraint| {
                 self.solution
                     .basis
-                    .polynomials(t)
+                    .polynomials(scaled_root)
                     .into_iter()
-                    .map(|poly| poly * constraint.multiplicative.evaluate(t))
+                    .map(|poly| poly * constraint.multiplicative.evaluate(scaled_root))
                     .collect()
             },
         );
 
-        E::one() / Scalar::powi(self.q(t), 2)
-            * (Scalar::powi(uncertainty_y, 2) + g.dot(&self.covariance.dot(&g))).sqrt()
+        let response_uncertainty = Scalar::powi(uncertainty_y, 2);
+        let fit_uncertainty = g.dot(&self.covariance.dot(&g));
+        (E::one() / Scalar::powi(self.q(scaled_root), 2) * (response_uncertainty + fit_uncertainty))
+            .sqrt()
     }
 }
 
 struct InverseProblem<E> {
     problem: Series<E>,
+    scaling: Option<E>,
     y0: E,
 }
 
 struct InverseProblemBuilder<'a, E> {
     problem: &'a Series<E>,
     y0: E,
+    scaling: Option<E>,
     constraint: Option<&'a Constraint<E>>,
 }
 
@@ -384,12 +401,18 @@ where
         Self {
             y0,
             problem,
+            scaling: None,
             constraint: None,
         }
     }
 
     const fn with_constraint(mut self, constraint: Option<&'a Constraint<E>>) -> Self {
         self.constraint = constraint;
+        self
+    }
+
+    const fn with_scaling(mut self, scaling: Option<E>) -> Self {
+        self.scaling = scaling;
         self
     }
 
@@ -404,6 +427,7 @@ where
                     self.problem.clone() * multiplicative.clone() + additive.clone()
                 },
             ),
+            scaling: self.scaling,
             y0: self.y0,
         }
     }
@@ -419,7 +443,8 @@ impl<E: ArgminFloat + Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + Pa
         &self,
         param: &Self::Param,
     ) -> ::std::result::Result<Self::Output, argmin::core::Error> {
-        Ok(Scalar::abs(self.problem.evaluate(*param) - self.y0))
+        let scale = self.scaling.unwrap_or_else(E::zero);
+        Ok(Scalar::abs(self.problem.evaluate(*param) - self.y0) * scale)
     }
 }
 
@@ -433,7 +458,9 @@ impl<E: ArgminFloat + Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + Pa
         &self,
         param: &Self::Param,
     ) -> ::std::result::Result<Self::Gradient, argmin::core::Error> {
+        let scale = self.scaling.unwrap_or_else(E::zero);
         Ok(self.problem.derivative(1).evaluate(*param)
+            * scale
             * FloatCore::signum(self.problem.evaluate(*param) - self.y0))
     }
 }
@@ -448,7 +475,9 @@ impl<E: ArgminFloat + Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + Pa
         &self,
         param: &Self::Param,
     ) -> ::std::result::Result<Self::Hessian, argmin::core::Error> {
+        let scale = self.scaling.unwrap_or_else(E::zero);
         Ok(self.problem.derivative(2).evaluate(*param)
+            * scale
             * FloatCore::signum(self.problem.evaluate(*param) - self.y0))
     }
 }
@@ -491,7 +520,7 @@ where
         //
         // If the minimisation produces a root outside [-1, 1] we search again, currently just
         // repeating indefinitely. If an initial parameter is provided this seeds the search, else
-        // we start at zero.
+        // we start at zero which is the central point of the range.
 
         let mut init_param = initial.unwrap_or_else(|| E::zero());
         let mut root = FloatCore::max_value();
@@ -509,6 +538,7 @@ where
             );
 
             let cost = InverseProblemBuilder::new(y0, self.solution())
+                .with_scaling(Some(self.solver_scaling()))
                 .with_constraint(self.constraint.as_ref())
                 .build();
 

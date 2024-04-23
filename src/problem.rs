@@ -16,6 +16,7 @@ use crate::utils::find_limits;
 use crate::PolyCalError;
 
 /// Different scoring strategies for fit procedure
+#[derive(Debug)]
 pub enum ScoringStrategy {
     /// Akaike's method
     Aic,
@@ -52,6 +53,21 @@ pub struct Constraint<E> {
     pub(crate) multiplicative: Series<E>,
 }
 
+impl<E: Scalar<Real = E>> Constraint<E> {
+    pub fn pass_through_origin(domain: Range<E>) -> Self {
+        Self {
+            additive: ChebyshevBuilder::new(0)
+                .with_coefficients(vec![E::zero()])
+                .on_domain(domain.clone())
+                .build(),
+            multiplicative: ChebyshevBuilder::new(1)
+                .with_coefficients(vec![E::zero(), E::one()])
+                .on_domain(domain)
+                .build(),
+        }
+    }
+}
+
 /// Problem abstraction
 ///
 /// Problems are created using a [`crate::ProblemBuilder`] which ensures the type-state of uncertainties
@@ -60,6 +76,7 @@ pub struct Problem<'a, E> {
     pub(crate) t: Array1<E>,
     pub(crate) y: ArrayView1<'a, E>,
     pub(crate) uncertainties: Covariance<'a, E>,
+    // The range of independent values
     pub(crate) domain: Range<E>,
     pub(crate) strategy: ScoringStrategy,
     pub(crate) constraint: Option<Constraint<E>>,
@@ -127,6 +144,7 @@ where
             .iter()
             .map(|fit| self.score(fit.solution()))
             .collect::<Vec<_>>();
+
         let diffs = scores
             .windows(2)
             .map(|window| window[1] - window[0])
@@ -199,15 +217,35 @@ where
     }
 
     fn chi_2(&self, fit: &Series<E>) -> E {
-        self.t.iter().zip(self.y).fold(E::zero(), |a, (t, y)| {
-            a + Scalar::powi(
-                *y - self.constraint.as_ref().map_or_else(
-                    || fit.evaluate(*t),
-                    |constraint| fit.evaluate(*t) * constraint.multiplicative.evaluate(*t),
-                ),
-                2,
-            )
-        })
+        match self.uncertainties {
+            Covariance::Uncertainty { uy, .. } => {
+                self.t
+                    .iter()
+                    .zip(self.y)
+                    .zip(uy)
+                    .fold(E::zero(), |a, ((t, y), uy)| {
+                        a + Scalar::powi(
+                            *y - self.constraint.as_ref().map_or_else(
+                                || fit.evaluate(*t),
+                                |constraint| {
+                                    fit.evaluate(*t) * constraint.multiplicative.evaluate(*t)
+                                },
+                            ),
+                            2,
+                        ) / Scalar::powi(*uy, 2)
+                    })
+            }
+            // TODO: This does not work when the uncertainties do not exist. Read the standard
+            _ => self.t.iter().zip(self.y).fold(E::zero(), |a, (t, y)| {
+                a + Scalar::powi(
+                    *y - self.constraint.as_ref().map_or_else(
+                        || fit.evaluate(*t),
+                        |constraint| fit.evaluate(*t) * constraint.multiplicative.evaluate(*t),
+                    ),
+                    2,
+                )
+            }),
+        }
     }
 
     #[tracing::instrument(skip(self))]
