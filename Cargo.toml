@@ -8,7 +8,7 @@ publish = ["sensorium-tl"]
 
 [dependencies]
 ndarray = { version = "0.15", features = ["blas"] }
-blas-src = { version = "0.9", features = ["openblas"] }
+blas-src = { version = "0.10", features = ["openblas"] }
 openblas-src = { version = "0.10", features = ["cblas", "system"] }
 
 argmin = { version = "0.8.1", features = ["_ndarrayl"] }
