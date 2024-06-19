@@ -52,9 +52,9 @@ pub struct ProblemBuilder<'a, E, DU, IU, DC, IC, C> {
     /// Independent or response data
     independent: ArrayView1<'a, E>,
     /// Dependent or stimulus data variances
-    dependent_uncertainty: Option<ArrayView1<'a, E>>,
+    dependent_variance: Option<ArrayView1<'a, E>>,
     /// Independent or response data variances
-    independent_uncertainty: Option<ArrayView1<'a, E>>,
+    independent_variance: Option<ArrayView1<'a, E>>,
     /// Dependent or stimulus data covariances
     dependent_covariance: Option<ArrayView2<'a, E>>,
     /// Independent or response data covariances
@@ -78,8 +78,8 @@ impl<'a, E> ProblemBuilder<'a, E, Unset, Unset, Unset, Unset, Unset> {
         let builder = Self {
             dependent: dependent.into(),
             independent: independent.into(),
-            dependent_uncertainty: None,
-            independent_uncertainty: None,
+            dependent_variance: None,
+            independent_variance: None,
             dependent_covariance: None,
             independent_covariance: None,
             constraint: None,
@@ -106,15 +106,15 @@ impl<'a, E, DU, IU, DC, IC, C> ProblemBuilder<'a, E, DU, IU, DC, IC, C> {
 }
 
 impl<'a, E, C> ProblemBuilder<'a, E, Unset, Unset, Unset, Unset, C> {
-    fn with_dependent_uncertainty(
+    fn with_dependent_variance(
         self,
-        dependent_uncertainty: impl Into<ArrayView1<'a, E>>,
+        dependent_variance: impl Into<ArrayView1<'a, E>>,
     ) -> ProblemBuilder<'a, E, Set, Unset, Unset, Unset, C> {
         ProblemBuilder {
             dependent: self.dependent,
             independent: self.independent,
-            dependent_uncertainty: Some(dependent_uncertainty.into()),
-            independent_uncertainty: self.independent_uncertainty,
+            dependent_variance: Some(dependent_variance.into()),
+            independent_variance: self.independent_variance,
             dependent_covariance: self.dependent_covariance,
             independent_covariance: self.independent_covariance,
             strategy: self.strategy,
@@ -125,15 +125,15 @@ impl<'a, E, C> ProblemBuilder<'a, E, Unset, Unset, Unset, Unset, C> {
 }
 
 impl<'a, E, C> ProblemBuilder<'a, E, Unset, Set, Unset, Unset, C> {
-    fn with_dependent_uncertainty(
+    fn with_dependent_variance(
         self,
-        dependent_uncertainty: impl Into<ArrayView1<'a, E>>,
+        dependent_variance: impl Into<ArrayView1<'a, E>>,
     ) -> ProblemBuilder<'a, E, Set, Set, Unset, Unset, C> {
         ProblemBuilder {
             dependent: self.dependent,
             independent: self.independent,
-            dependent_uncertainty: Some(dependent_uncertainty.into()),
-            independent_uncertainty: self.independent_uncertainty,
+            dependent_variance: Some(dependent_variance.into()),
+            independent_variance: self.independent_variance,
             dependent_covariance: self.dependent_covariance,
             independent_covariance: self.independent_covariance,
             strategy: self.strategy,
@@ -144,15 +144,15 @@ impl<'a, E, C> ProblemBuilder<'a, E, Unset, Set, Unset, Unset, C> {
 }
 
 impl<'a, E, C> ProblemBuilder<'a, E, Unset, Unset, Unset, Unset, C> {
-    pub fn with_independent_uncertainty(
+    pub fn with_independent_variance(
         self,
-        independent_uncertainty: impl Into<ArrayView1<'a, E>>,
+        independent_variance: impl Into<ArrayView1<'a, E>>,
     ) -> ProblemBuilder<'a, E, Unset, Set, Unset, Unset, C> {
         ProblemBuilder {
             dependent: self.dependent,
             independent: self.independent,
-            dependent_uncertainty: self.dependent_uncertainty,
-            independent_uncertainty: Some(independent_uncertainty.into()),
+            dependent_variance: self.dependent_variance,
+            independent_variance: Some(independent_variance.into()),
             dependent_covariance: self.dependent_covariance,
             independent_covariance: self.independent_covariance,
             strategy: self.strategy,
@@ -163,15 +163,15 @@ impl<'a, E, C> ProblemBuilder<'a, E, Unset, Unset, Unset, Unset, C> {
 }
 
 impl<'a, E, C> ProblemBuilder<'a, E, Set, Unset, Unset, Unset, C> {
-    pub fn with_independent_uncertainty(
+    pub fn with_independent_variance(
         self,
-        independent_uncertainty: impl Into<ArrayView1<'a, E>>,
+        independent_variance: impl Into<ArrayView1<'a, E>>,
     ) -> ProblemBuilder<'a, E, Set, Set, Unset, Unset, C> {
         ProblemBuilder {
             dependent: self.dependent,
             independent: self.independent,
-            dependent_uncertainty: self.dependent_uncertainty,
-            independent_uncertainty: Some(independent_uncertainty.into()),
+            dependent_variance: self.dependent_variance,
+            independent_variance: Some(independent_variance.into()),
             dependent_covariance: self.dependent_covariance,
             independent_covariance: self.independent_covariance,
             strategy: self.strategy,
@@ -189,8 +189,8 @@ impl<'a, E, C> ProblemBuilder<'a, E, Unset, Unset, Unset, Unset, C> {
         ProblemBuilder {
             dependent: self.dependent,
             independent: self.independent,
-            dependent_uncertainty: self.dependent_uncertainty,
-            independent_uncertainty: self.independent_uncertainty,
+            dependent_variance: self.dependent_variance,
+            independent_variance: self.independent_variance,
             dependent_covariance: Some(dependent_covariance.into()),
             independent_covariance: self.independent_covariance,
             strategy: self.strategy,
@@ -208,8 +208,8 @@ impl<'a, E, C> ProblemBuilder<'a, E, Unset, Unset, Unset, Set, C> {
         ProblemBuilder {
             dependent: self.dependent,
             independent: self.independent,
-            dependent_uncertainty: self.dependent_uncertainty,
-            independent_uncertainty: self.independent_uncertainty,
+            dependent_variance: self.dependent_variance,
+            independent_variance: self.independent_variance,
             dependent_covariance: Some(dependent_covariance.into()),
             independent_covariance: self.independent_covariance,
             strategy: self.strategy,
@@ -227,8 +227,8 @@ impl<'a, E, C> ProblemBuilder<'a, E, Unset, Unset, Unset, Unset, C> {
         ProblemBuilder {
             dependent: self.dependent,
             independent: self.independent,
-            dependent_uncertainty: self.dependent_uncertainty,
-            independent_uncertainty: self.independent_uncertainty,
+            dependent_variance: self.dependent_variance,
+            independent_variance: self.independent_variance,
             dependent_covariance: self.dependent_covariance,
             independent_covariance: Some(independent_covariance.into()),
             strategy: self.strategy,
@@ -246,8 +246,8 @@ impl<'a, E, C> ProblemBuilder<'a, E, Unset, Unset, Set, Unset, C> {
         ProblemBuilder {
             dependent: self.dependent,
             independent: self.independent,
-            dependent_uncertainty: self.dependent_uncertainty,
-            independent_uncertainty: self.independent_uncertainty,
+            dependent_variance: self.dependent_variance,
+            independent_variance: self.independent_variance,
             dependent_covariance: self.dependent_covariance,
             independent_covariance: Some(independent_covariance.into()),
             strategy: self.strategy,
@@ -265,8 +265,8 @@ impl<'a, E, DU, IU, DC, IC> ProblemBuilder<'a, E, DU, IU, DC, IC, Unset> {
         ProblemBuilder {
             dependent: self.dependent,
             independent: self.independent,
-            dependent_uncertainty: self.dependent_uncertainty,
-            independent_uncertainty: self.independent_uncertainty,
+            dependent_variance: self.dependent_variance,
+            independent_variance: self.independent_variance,
             dependent_covariance: self.dependent_covariance,
             independent_covariance: self.independent_covariance,
             strategy: self.strategy,
@@ -303,10 +303,10 @@ impl<'a, E: PartialOrd + Scalar> ProblemBuilder<'a, E, Unset, Set, Unset, Unset,
         Problem {
             t,
             y: self.dependent,
-            uncertainties: Covariance::Uncertainty {
+            uncertainties: Covariance::Variance {
                 ux: None,
-                uy: self.independent_uncertainty.unwrap(), // This is safe as the typestate ensure
-                                                           // it is some
+                uy: self.independent_variance.unwrap(), // This is safe as the typestate ensure
+                                                        // it is some
             },
             domain,
             strategy: self.strategy,
@@ -321,9 +321,9 @@ impl<'a, E: PartialOrd + Scalar> ProblemBuilder<'a, E, Set, Set, Unset, Unset, U
         Problem {
             t,
             y: self.dependent,
-            uncertainties: Covariance::Uncertainty {
-                ux: Some(self.dependent_uncertainty.unwrap()),
-                uy: self.independent_uncertainty.unwrap(),
+            uncertainties: Covariance::Variance {
+                ux: Some(self.dependent_variance.unwrap()),
+                uy: self.independent_variance.unwrap(),
             },
             domain,
             strategy: self.strategy,
@@ -392,9 +392,9 @@ impl<'a, E: PartialOrd + Scalar, C: Into<Constraint<E>>>
         Problem {
             t,
             y: self.dependent,
-            uncertainties: Covariance::Uncertainty {
+            uncertainties: Covariance::Variance {
                 ux: None,
-                uy: self.independent_uncertainty.unwrap(),
+                uy: self.independent_variance.unwrap(),
             },
             domain,
             strategy: self.strategy,
@@ -411,9 +411,9 @@ impl<'a, E: PartialOrd + Scalar, C: Into<Constraint<E>>>
         Problem {
             t,
             y: self.dependent,
-            uncertainties: Covariance::Uncertainty {
-                ux: Some(self.dependent_uncertainty.unwrap()),
-                uy: self.independent_uncertainty.unwrap(),
+            uncertainties: Covariance::Variance {
+                ux: Some(self.dependent_variance.unwrap()),
+                uy: self.independent_variance.unwrap(),
             },
             domain,
             strategy: self.strategy,
@@ -474,7 +474,7 @@ impl<'a, E: PartialOrd + Scalar, C: Into<Constraint<E>>>
 //     use crate::ChebyshevPolynomial;
 //
 //     #[test]
-//     fn fit_with_independent_uncertainty_works_in_direct_evaluation() {
+//     fn fit_with_independent_variance_works_in_direct_evaluation() {
 //         let state = 40;
 //         let mut rng = Isaac64Rng::seed_from_u64(state);
 //
@@ -544,7 +544,7 @@ impl<'a, E: PartialOrd + Scalar, C: Into<Constraint<E>>>
 //             .collect::<Array1<_>>();
 //
 //         let builder =
-//             ProblemBuilder::new(x.view(), y.view()).with_independent_uncertainty(uy.view());
+//             ProblemBuilder::new(x.view(), y.view()).with_independent_variance(uy.view());
 //
 //         let problem = builder.build();
 //
@@ -651,7 +651,7 @@ impl<'a, E: PartialOrd + Scalar, C: Into<Constraint<E>>>
 //             .collect::<Array1<_>>();
 //
 //         let builder = ProblemBuilder::new(x.view(), y.view())
-//             .with_independent_uncertainty(uy.view())
+//             .with_independent_variance(uy.view())
 //             .with_constraint(constraint)
 //             .with_scoring_strategy(ScoringStrategy::ChiSquare);
 //

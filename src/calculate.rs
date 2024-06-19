@@ -56,6 +56,63 @@ pub struct Unsure<E> {
     pub standard_uncertainty: E,
 }
 
+#[derive(Copy, Clone, Debug)]
+pub struct Stimulus<E> {
+    // Calculated central value
+    estimate: E,
+    // Variance associated with the measurement
+    variance: InverseVariance<E>,
+}
+
+#[derive(Copy, Clone, Debug)]
+// Variance calculated for an inverse-evaluation
+pub struct InverseVariance<E> {
+    // Contribution from fitting uncertainty
+    pub model: E,
+    // Contribution from the measurement
+    pub measurement: E,
+}
+
+impl<E: Scalar<Real = E>> Stimulus<E> {
+    pub const fn estimate(&self) -> E {
+        self.estimate
+    }
+
+    pub fn variance(&self) -> E {
+        self.variance.total()
+    }
+
+    pub const fn measurement_variance(&self) -> E {
+        self.variance.measurement
+    }
+
+    pub const fn model_variance(&self) -> E {
+        self.variance.model
+    }
+
+    pub fn uncertainty(&self) -> E {
+        self.variance.total_uncertainty()
+    }
+
+    pub fn measurement_uncertainty(&self) -> E {
+        self.variance.measurement.sqrt()
+    }
+
+    pub fn model_uncertainty(&self) -> E {
+        self.variance.model.sqrt()
+    }
+}
+
+impl<E: Scalar<Real = E>> InverseVariance<E> {
+    fn total(&self) -> E {
+        self.model + self.measurement
+    }
+
+    fn total_uncertainty(&self) -> E {
+        self.total().sqrt()
+    }
+}
+
 impl<E> Fit<E> {
     /// Returns the range of stimulus values used in the calibration procedure.
     ///
@@ -267,7 +324,7 @@ where
         response: Unsure<E>,
         guess: Option<E>,
         max_iter: Option<usize>,
-    ) -> PolyCalResult<Unsure<E>, E> {
+    ) -> PolyCalResult<Stimulus<E>, E> {
         if !self.response_domain.contains(&response.estimate) {
             return Err(PolyCalError::OutOfRange {
                 value: response.estimate,
@@ -279,16 +336,12 @@ where
         let scaled_estimate = self.evaluate_inverse(response.estimate, guess, max_iter)?;
 
         event!(Level::INFO, "evaluating uncertainty");
-        let standard_uncertainty = Scalar::abs(
-            self.evaluate_inverse_uncertainty(scaled_estimate, response.standard_uncertainty),
-        );
+        let variance =
+            self.evaluate_inverse_uncertainty(scaled_estimate, response.standard_uncertainty);
 
         // Scale back to the true data type
         let estimate = crate::utils::to_unscaled(scaled_estimate, self.stimulus_domain());
-        Ok(Unsure {
-            estimate,
-            standard_uncertainty,
-        })
+        Ok(Stimulus { estimate, variance })
     }
 }
 
@@ -360,7 +413,11 @@ impl<E: Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd> Fit<
 
     // Uncertainty in the stimulus variable. This is in the *true* stimulus variable, and does not
     // require rescaling after the function return.
-    pub(crate) fn evaluate_inverse_uncertainty(&self, scaled_root: E, uncertainty_y: E) -> E {
+    pub(crate) fn evaluate_inverse_uncertainty(
+        &self,
+        scaled_root: E,
+        uncertainty_y: E,
+    ) -> InverseVariance<E> {
         let g: Array1<E> = self.constraint.as_ref().map_or_else(
             || self.solution.basis.polynomials(scaled_root).into(),
             |constraint| {
@@ -374,9 +431,12 @@ impl<E: Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd> Fit<
         );
 
         let response_uncertainty = Scalar::powi(uncertainty_y, 2);
-        let fit_uncertainty = g.dot(&self.covariance.dot(&g));
-        (E::one() / Scalar::powi(self.q(scaled_root), 2) * (response_uncertainty + fit_uncertainty))
-            .sqrt()
+        let fit_uncertainty = g.dot(&self.covariance.dot(&g)) * E::zero();
+        let scaling = E::one() / Scalar::powi(self.q(scaled_root), 2);
+        InverseVariance {
+            model: scaling * fit_uncertainty,
+            measurement: scaling * response_uncertainty,
+        }
     }
 }
 

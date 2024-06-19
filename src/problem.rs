@@ -30,7 +30,7 @@ pub enum ScoringStrategy {
 
 pub enum Covariance<'a, E> {
     None,
-    Uncertainty {
+    Variance {
         ux: Option<ArrayView1<'a, E>>,
         uy: ArrayView1<'a, E>,
     },
@@ -144,6 +144,7 @@ where
             .iter()
             .map(|fit| self.score(fit.solution()))
             .collect::<Vec<_>>();
+        dbg!(&scores);
 
         let diffs = scores
             .windows(2)
@@ -218,7 +219,7 @@ where
 
     fn chi_2(&self, fit: &Series<E>) -> E {
         match self.uncertainties {
-            Covariance::Uncertainty { uy, .. } => {
+            Covariance::Variance { uy, .. } => {
                 self.t
                     .iter()
                     .zip(self.y)
@@ -232,7 +233,7 @@ where
                                 },
                             ),
                             2,
-                        ) / Scalar::powi(*uy, 2)
+                        ) / *uy
                     })
             }
             // TODO: This does not work when the uncertainties do not exist. Read the standard
@@ -265,7 +266,7 @@ where
                 h: design_matrix,
             }
             .solve(),
-            Covariance::Uncertainty { ux, uy } if ux.is_none() => WeightedLeastSquares {
+            Covariance::Variance { ux, uy } if ux.is_none() => WeightedLeastSquares {
                 y,
                 uncertainty: Uncertainty::Diagonal(uy),
                 h: design_matrix,
@@ -277,7 +278,7 @@ where
                 h: design_matrix,
             }
             .solve(),
-            Covariance::Uncertainty { ux, uy } => TotalLeastSquares {
+            Covariance::Variance { ux, uy } => TotalLeastSquares {
                 y,
                 uncertainty_x: Uncertainty::Diagonal(ux.unwrap()),
                 uncertainty_y: Uncertainty::Diagonal(uy),
