@@ -123,6 +123,10 @@ impl<E> Fit<E> {
     pub const fn stimulus_domain(&self) -> &Range<E> {
         &self.solution.domain
     }
+
+    pub const fn response_domain(&self) -> &Range<E> {
+        &self.response_domain
+    }
 }
 
 impl<E: Scalar> Fit<E> {

@@ -16,7 +16,7 @@ use crate::utils::find_limits;
 use crate::PolyCalError;
 
 /// Different scoring strategies for fit procedure
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum ScoringStrategy {
     /// Akaike's method
     Aic,
@@ -144,7 +144,8 @@ where
             .iter()
             .map(|fit| self.score(fit.solution()))
             .collect::<Vec<_>>();
-        dbg!(&scores);
+
+        tracing::info!("scores: {:?}", &scores);
 
         let diffs = scores
             .windows(2)
