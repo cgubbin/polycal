@@ -7,8 +7,8 @@
 //! polynomial series y = `p_n(x`); In the inverse case, to predict a new stimulus from a known
 //! response we numerically minimise abs(y - `p_n(x`)) to find the root.
 //!
-//! Both prediction methods take an [`Unsure`] as an argument. This represents a new value with an
-//! associated estimate and variance. They also return an [`Unsure`], propagating the error from
+//! Both prediction methods take an [`AbsUncertainty`] as an argument. This represents a new value with an
+//! associated estimate and variance. They also return an [`AbsUncertainty`], propagating the error from
 //! the input and combining it with that on the calculated fitting coefficients.
 
 use argmin::{
@@ -24,9 +24,10 @@ use ndarray_rand::{
     rand::Rng,
     rand_distr::{Distribution, Normal, StandardNormal},
 };
-use num_traits::float::FloatCore;
+use num_traits::{float::FloatCore, Float};
 use std::ops::Range;
 use tracing::{event, Level};
+use uncertainty::{AbsUncertainty, Uncertainty};
 
 use crate::chebyshev::{Polynomial, PolynomialSeries, Series};
 use crate::error::Kind;
@@ -47,14 +48,14 @@ pub struct Fit<E> {
     pub(crate) constraint: Option<Constraint<E>>,
 }
 
-#[derive(Copy, Clone, Debug)]
-/// A value with associated estimate (expectation) and standard uncertainty.
-pub struct Unsure<E> {
-    /// Central value, or mean, of the measurement
-    pub estimate: E,
-    /// Standard deviation of the measurement
-    pub standard_uncertainty: E,
-}
+// #[derive(Copy, Clone, Debug)]
+// /// A value with associated estimate (expectation) and standard uncertainty.
+// pub struct AbsUncertainty<E> {
+//     /// Central value, or mean, of the measurement
+//     pub estimate: E,
+//     /// Standard deviation of the measurement
+//     pub standard_uncertainty: E,
+// }
 
 impl<E> Fit<E> {
     /// Returns the range of stimulus values used in the calibration procedure.
@@ -65,6 +66,10 @@ impl<E> Fit<E> {
     /// the reconstruction is entirely uncertain.
     pub const fn stimulus_domain(&self) -> &Range<E> {
         &self.solution.domain
+    }
+
+    pub const fn response_domain(&self) -> &Range<E> {
+        &self.response_domain
     }
 }
 
@@ -137,8 +142,9 @@ where
     }
 }
 
-impl<E: Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd + tracing::Value>
-    Fit<E>
+impl<
+        E: Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd + tracing::Value + Float,
+    > Fit<E>
 {
     /// Direct evaluation y = `p_n(x`, a)
     ///
@@ -149,27 +155,24 @@ impl<E: Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd + tra
     /// If the provided stimulus lies outside the data-range used to form the calibration
     /// this method returns an error.
     #[tracing::instrument(skip(self))]
-    pub fn response(&self, stimulus: Unsure<E>) -> PolyCalResult<Unsure<E>, E> {
-        if !self.solution().domain().contains(&stimulus.estimate) {
+    pub fn response(&self, stimulus: AbsUncertainty<E>) -> PolyCalResult<AbsUncertainty<E>, E> {
+        if !self.solution().domain().contains(&stimulus.mean()) {
             return Err(PolyCalError::OutOfRange {
-                value: stimulus.estimate,
+                value: stimulus.mean(),
                 range: self.solution().domain(),
                 kind: Kind::Stimulus,
             });
         }
-        let t = to_scaled(stimulus.estimate, self.stimulus_domain());
+        let t = to_scaled(stimulus.mean(), self.stimulus_domain());
 
         event!(Level::INFO, scaled = t, "evaluating series");
         let estimate = self.evaluate_direct(t);
 
         event!(Level::INFO, estimate = estimate, "evaluating uncertainty");
         let standard_uncertainty =
-            self.evaluate_direct_uncertainty(t, stimulus.standard_uncertainty);
+            self.evaluate_direct_uncertainty(t, stimulus.standard_deviation());
 
-        Ok(Unsure {
-            estimate,
-            standard_uncertainty,
-        })
+        Ok(AbsUncertainty::new(estimate, standard_uncertainty))
     }
 
     /// Direct evaluation y = `p_n(x`, a)
@@ -254,31 +257,28 @@ where
     #[tracing::instrument(skip(self, guess))]
     pub fn stimulus(
         &self,
-        response: Unsure<E>,
+        response: AbsUncertainty<E>,
         guess: Option<E>,
         max_iter: Option<usize>,
-    ) -> PolyCalResult<Unsure<E>, E> {
-        if !self.response_domain.contains(&response.estimate) {
+    ) -> PolyCalResult<AbsUncertainty<E>, E> {
+        if !self.response_domain.contains(&response.mean()) {
             return Err(PolyCalError::OutOfRange {
-                value: response.estimate,
+                value: response.mean(),
                 range: self.response_domain.clone(),
                 kind: Kind::Response,
             });
         }
 
-        let scaled_estimate = self.evaluate_inverse(response.estimate, guess, max_iter)?;
+        let scaled_estimate = self.evaluate_inverse(response.mean(), guess, max_iter)?;
 
         event!(Level::INFO, "evaluating uncertainty");
         let scaled_standard_uncertainty =
-            self.evaluate_inverse_uncertainty(scaled_estimate, response.standard_uncertainty);
+            self.evaluate_inverse_uncertainty(scaled_estimate, response.standard_deviation());
 
         // Scale back to the true data type
         let estimate = crate::utils::to_unscaled(scaled_estimate, self.stimulus_domain());
         let standard_uncertainty = estimate / scaled_estimate * scaled_standard_uncertainty;
-        Ok(Unsure {
-            estimate,
-            standard_uncertainty,
-        })
+        Ok(AbsUncertainty::new(estimate, standard_uncertainty))
     }
 }
 
@@ -554,8 +554,9 @@ mod test {
     use num_traits::float::FloatCore;
     use rand_isaac::Isaac64Rng;
     use std::ops::Range;
+    use uncertainty::{AbsUncertainty, Uncertainty};
 
-    use super::{Fit, Unsure};
+    use super::Fit;
     use crate::chebyshev::{PolynomialSeries, Series};
     use crate::utils::find_limits;
     use crate::Constraint;
@@ -648,14 +649,9 @@ mod test {
             .take(number_of_data_points - 2)
         {
             let expected = y[ii];
-            let calculated = fit
-                .response(Unsure {
-                    estimate: x,
-                    standard_uncertainty: 0.0,
-                })
-                .unwrap();
+            let calculated = fit.response(AbsUncertainty::new(x, 0.0)).unwrap();
 
-            approx::assert_relative_eq!(expected, calculated.estimate, max_relative = 1e-7);
+            approx::assert_relative_eq!(expected, calculated.mean(), max_relative = 1e-7);
         }
     }
 
@@ -691,14 +687,9 @@ mod test {
             .take(number_of_data_points - 2)
         {
             let expected = y[ii];
-            let calculated = fit
-                .response(Unsure {
-                    estimate: x,
-                    standard_uncertainty: 0.0,
-                })
-                .unwrap();
+            let calculated = fit.response(AbsUncertainty::new(x, 0.0)).unwrap();
 
-            approx::assert_relative_eq!(expected, calculated.estimate, max_relative = 1e-7);
+            approx::assert_relative_eq!(expected, calculated.mean(), max_relative = 1e-7);
         }
     }
 
@@ -731,19 +722,12 @@ mod test {
         {
             let expected = x[ii];
             let calculated = fit
-                .stimulus(
-                    Unsure {
-                        estimate: y,
-                        standard_uncertainty: 0.0,
-                    },
-                    None,
-                    None,
-                )
+                .stimulus(AbsUncertainty::new(y, 0.0), None, None)
                 .expect("failed to solve the minimisation problem");
             if expected == 0.0 {
-                approx::assert_relative_eq!(expected, calculated.estimate, epsilon = 1e-5);
+                approx::assert_relative_eq!(expected, calculated.mean(), epsilon = 1e-5);
             } else {
-                approx::assert_relative_eq!(expected, calculated.estimate, max_relative = 1e-5);
+                approx::assert_relative_eq!(expected, calculated.mean(), max_relative = 1e-5);
             }
         }
     }
@@ -808,19 +792,12 @@ mod test {
         {
             let expected = x[ii];
             let calculated = fit
-                .stimulus(
-                    Unsure {
-                        estimate: y,
-                        standard_uncertainty: 0.0,
-                    },
-                    None,
-                    None,
-                )
+                .stimulus(AbsUncertainty::new(y, 0.0), None, None)
                 .expect("failed to solve the minimisation problem");
             if expected == 0.0 {
-                approx::assert_relative_eq!(expected, calculated.estimate, epsilon = 1e-5);
+                approx::assert_relative_eq!(expected, calculated.mean(), epsilon = 1e-5);
             } else {
-                approx::assert_relative_eq!(expected, calculated.estimate, max_relative = 1e-5);
+                approx::assert_relative_eq!(expected, calculated.mean(), max_relative = 1e-5);
             }
         }
     }
@@ -853,14 +830,9 @@ mod test {
             .take(number_of_data_points - 2)
         {
             let expected = y[ii];
-            let calculated = fit
-                .response(Unsure {
-                    estimate: x,
-                    standard_uncertainty: 0.0,
-                })
-                .unwrap();
+            let calculated = fit.response(AbsUncertainty::new(x, 0.0)).unwrap();
 
-            approx::assert_relative_eq!(expected, calculated.estimate, max_relative = 1e-7);
+            approx::assert_relative_eq!(expected, calculated.mean(), max_relative = 1e-7);
         }
     }
 
@@ -896,14 +868,9 @@ mod test {
             .take(number_of_data_points - 2)
         {
             let expected = y[ii];
-            let calculated = fit
-                .response(Unsure {
-                    estimate: x,
-                    standard_uncertainty: 0.0,
-                })
-                .unwrap();
+            let calculated = fit.response(AbsUncertainty::new(x, 0.0)).unwrap();
 
-            approx::assert_relative_eq!(expected, calculated.estimate, max_relative = 1e-7);
+            approx::assert_relative_eq!(expected, calculated.mean(), max_relative = 1e-7);
         }
     }
 
@@ -957,20 +924,13 @@ mod test {
         {
             let expected = x[ii];
             let calculated = fit
-                .stimulus(
-                    Unsure {
-                        estimate: y,
-                        standard_uncertainty: 0.0,
-                    },
-                    None,
-                    None,
-                )
+                .stimulus(AbsUncertainty::new(y, 0.0), None, None)
                 .expect("failed to solve the minimisation problem");
 
             if expected == 0.0 {
-                approx::assert_relative_eq!(expected, calculated.estimate, epsilon = 1e-5);
+                approx::assert_relative_eq!(expected, calculated.mean(), epsilon = 1e-5);
             } else {
-                approx::assert_relative_eq!(expected, calculated.estimate, max_relative = 1e-5);
+                approx::assert_relative_eq!(expected, calculated.mean(), max_relative = 1e-5);
             }
         }
     }
@@ -1035,19 +995,12 @@ mod test {
         {
             let expected = x[ii];
             let calculated = fit
-                .stimulus(
-                    Unsure {
-                        estimate: y,
-                        standard_uncertainty: 0.0,
-                    },
-                    None,
-                    None,
-                )
+                .stimulus(AbsUncertainty::new(y, 0.0), None, None)
                 .expect("failed to solve the minimisation problem");
             if expected == 0.0 {
-                approx::assert_relative_eq!(expected, calculated.estimate, epsilon = 1e-5);
+                approx::assert_relative_eq!(expected, calculated.mean(), epsilon = 1e-5);
             } else {
-                approx::assert_relative_eq!(expected, calculated.estimate, max_relative = 1e-5);
+                approx::assert_relative_eq!(expected, calculated.mean(), max_relative = 1e-5);
             }
         }
     }
@@ -1102,20 +1055,13 @@ mod test {
         {
             let expected = x[ii];
             let calculated = fit
-                .stimulus(
-                    Unsure {
-                        estimate: y,
-                        standard_uncertainty: 0.0,
-                    },
-                    None,
-                    None,
-                )
+                .stimulus(AbsUncertainty::new(y, 0.0), None, None)
                 .expect("failed to solve the minimisation problem");
 
             if expected == 0.0 {
-                approx::assert_relative_eq!(expected, calculated.estimate, epsilon = 1e-5);
+                approx::assert_relative_eq!(expected, calculated.mean(), epsilon = 1e-5);
             } else {
-                approx::assert_relative_eq!(expected, calculated.estimate, max_relative = 1e-5);
+                approx::assert_relative_eq!(expected, calculated.mean(), max_relative = 1e-5);
             }
         }
     }
@@ -1180,19 +1126,12 @@ mod test {
         {
             let expected = x[ii];
             let calculated = fit
-                .stimulus(
-                    Unsure {
-                        estimate: y,
-                        standard_uncertainty: 0.0,
-                    },
-                    None,
-                    None,
-                )
+                .stimulus(AbsUncertainty::new(y, 0.0), None, None)
                 .expect("failed to solve the minimisation problem");
             if expected == 0.0 {
-                approx::assert_relative_eq!(expected, calculated.estimate, epsilon = 1e-5);
+                approx::assert_relative_eq!(expected, calculated.mean(), epsilon = 1e-5);
             } else {
-                approx::assert_relative_eq!(expected, calculated.estimate, max_relative = 1e-5);
+                approx::assert_relative_eq!(expected, calculated.mean(), max_relative = 1e-5);
             }
         }
     }
