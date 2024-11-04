@@ -30,7 +30,7 @@ pub enum PolyCalError<E> {
     NoMinimum { scores: Vec<E> },
     /// Input data contained invalid values, leaving the calculation unable to proceed
     #[error("provided data must be free of NaN, or infinities")]
-    InvalidData,
+    InvalidData(String),
     /// Error in low-level Chebyshev calculation
     #[error("error in chebyshev calculation")]
     Chebyshev(ChebyshevError),

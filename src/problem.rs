@@ -109,18 +109,21 @@ where
     pub fn solve(&self, n_max: usize) -> ::std::result::Result<Fit<E>, PolyCalError<E>> {
         let fits = (1..n_max)
             .filter_map(|polynomial_degree| match self.fit(polynomial_degree) {
-                Ok(fit) => match self.check_is_monotonic(fit.solution()) {
+                Ok(fit) => match self.check_is_monotonic(&fit.solution()) {
                     Ok(true) => Some(fit),
                     Ok(false) => {
+                        println!("non-monotonic");
                         tracing::error!("found non-monotonic solution");
                         None
                     }
                     Err(err) => {
+                        println!("err {err:?}");
                         tracing::error!("{err:?}");
                         None
                     }
                 },
                 Err(err) => {
+                    println!("err {err:?}");
                     tracing::error!("{err:?}");
                     None
                 }
@@ -143,8 +146,11 @@ where
     fn find_best_fit(&self, mut fits: Vec<Fit<E>>) -> (E, Fit<E>) {
         let scores = fits
             .iter()
-            .map(|fit| self.score(fit.solution()))
+            .map(|fit| self.score(&fit.solution()))
             .collect::<Vec<_>>();
+
+        dbg!(&scores);
+
         let diffs = scores
             .windows(2)
             .map(|window| window[1] - window[0])
@@ -157,7 +163,7 @@ where
             // Try again...
             let chi_2_scores = fits
                 .iter()
-                .map(|fit| self.chi_2(fit.solution()))
+                .map(|fit| self.chi_2(&fit.solution()))
                 .collect::<Vec<_>>();
             let best_score = *chi_2_scores
                 .iter()
@@ -232,7 +238,7 @@ where
                                 },
                             ),
                             2,
-                        ) / Scalar::powi(*uy, 2)
+                        ) / *uy
                     })
             }
             // TODO: This does not work when the uncertainties do not exist. Re-read the ISO
@@ -253,6 +259,7 @@ where
         let design_matrix = self.design_matrix(polynomial_degree).unwrap(); // This method is fallible, but only because of a matrix-shape-conversion.
                                                                             // As the method takes a single parameter, then builds the matrix, this
                                                                             // cannot occur in practice
+
         let y = self.constraint.as_ref().map_or_else(
             || self.y.to_owned(),
             |constraint| self.shifted_independent_variable(constraint),
@@ -317,7 +324,7 @@ where
             .to_owned()
             .iter()
             .zip(self.t.iter())
-            .map(|(y, t)| *y - additive.evaluate(*t))
+            .map(|(y, t)| (*y - additive.evaluate(*t)))
             .collect()
     }
 
@@ -353,7 +360,15 @@ where
     ) -> ::std::result::Result<bool, ChebyshevError> {
         self.constraint.as_ref().map_or_else(
             || solution.is_monotonic(),
-            |constraint| (solution.clone() * constraint.multiplicative.clone()).is_monotonic(),
+            |constraint| {
+                let poly = solution.clone() * constraint.multiplicative.clone();
+                dbg!(&self
+                    .t
+                    .iter()
+                    .map(|each| poly.evaluate(*each))
+                    .collect::<Vec<_>>());
+                poly.is_monotonic()
+            },
         )
     }
 }

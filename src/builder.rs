@@ -28,10 +28,12 @@
 
 use ndarray::{ArrayView1, ArrayView2};
 use ndarray_linalg::Scalar;
+use num_traits::Float;
 use std::marker::PhantomData;
 
 use crate::problem::{Constraint, Covariance, Problem, ScoringStrategy};
 use crate::utils::{form_rescaled_variables, Rescaled};
+use crate::PolyCalError;
 
 #[derive(Default)]
 /// Marker struct to indicate a field has been previously set.
@@ -52,9 +54,9 @@ pub struct ProblemBuilder<'a, E, DU, IU, DC, IC, C> {
     /// Independent or response data
     independent: ArrayView1<'a, E>,
     /// Dependent or stimulus data variances
-    dependent_uncertainty: Option<ArrayView1<'a, E>>,
+    dependent_variance: Option<ArrayView1<'a, E>>,
     /// Independent or response data variances
-    independent_uncertainty: Option<ArrayView1<'a, E>>,
+    independent_variance: Option<ArrayView1<'a, E>>,
     /// Dependent or stimulus data covariances
     dependent_covariance: Option<ArrayView2<'a, E>>,
     /// Independent or response data covariances
@@ -69,17 +71,38 @@ pub struct ProblemBuilder<'a, E, DU, IU, DC, IC, C> {
     typestate: PhantomData<(DU, IU, DC, IC, C)>,
 }
 
-impl<'a, E> ProblemBuilder<'a, E, Unset, Unset, Unset, Unset, Unset> {
+impl<'a, E: Float> ProblemBuilder<'a, E, Unset, Unset, Unset, Unset, Unset> {
     /// Create a new [`ProblemBuilder`] from independent and dependent data.
     ///
-    /// # Panics
+    /// # Errors
     /// - If the independent and dependent data provided contain unequal numbers of observations.
-    pub fn new<V: Into<ArrayView1<'a, E>>>(independent: V, dependent: V) -> Self {
+    /// - If the independent and dependent data provided contain NaN or infinity
+    pub fn new<V: Into<ArrayView1<'a, E>>>(
+        independent: V,
+        dependent: V,
+    ) -> Result<Self, PolyCalError<E>> {
+        let dependent: ArrayView1<'a, E> = dependent.into();
+        let independent: ArrayView1<'a, E> = independent.into();
+        if independent.len() != dependent.len() {
+            return Err(PolyCalError::InvalidData(
+                "dependent and independent data must contain equal numbers of observations".into(),
+            ));
+        }
+        if dependent.iter().any(|each| !each.is_finite()) {
+            return Err(PolyCalError::InvalidData(
+                "dependent values cannot contain NaN or infinity".into(),
+            ));
+        }
+        if independent.iter().any(|each| !each.is_finite()) {
+            return Err(PolyCalError::InvalidData(
+                "independent values cannot contain NaN or infinity".into(),
+            ));
+        }
         let builder = Self {
-            dependent: dependent.into(),
-            independent: independent.into(),
-            dependent_uncertainty: None,
-            independent_uncertainty: None,
+            dependent,
+            independent,
+            dependent_variance: None,
+            independent_variance: None,
             dependent_covariance: None,
             independent_covariance: None,
             constraint: None,
@@ -87,12 +110,7 @@ impl<'a, E> ProblemBuilder<'a, E, Unset, Unset, Unset, Unset, Unset> {
             typestate: PhantomData,
         };
 
-        assert_eq!(
-            builder.dependent.len(),
-            builder.independent.len(),
-            "dependent and independent data must contain equal numbers of observations"
-        );
-        builder
+        Ok(builder)
     }
 }
 
@@ -105,79 +123,143 @@ impl<E, DU, IU, DC, IC, C> ProblemBuilder<'_, E, DU, IU, DC, IC, C> {
     }
 }
 
-impl<'a, E, C> ProblemBuilder<'a, E, Unset, Unset, Unset, Unset, C> {
-    fn with_dependent_uncertainty(
+impl<'a, E: Float, C> ProblemBuilder<'a, E, Unset, Unset, Unset, Unset, C> {
+    #[allow(clippy::type_complexity)]
+    /// Attach a variance for the dependent variable
+    ///
+    /// # Errors
+    /// - If the provided values contain any NaN, infinite, or zero values. Note that zeros are not
+    ///     allowed, because the weighted least squares process relies on the inverse of the
+    ///     variance
+    fn with_dependent_variance(
         self,
-        dependent_uncertainty: impl Into<ArrayView1<'a, E>>,
-    ) -> ProblemBuilder<'a, E, Set, Unset, Unset, Unset, C> {
-        ProblemBuilder {
+        dependent_variance: impl Into<ArrayView1<'a, E>>,
+    ) -> Result<ProblemBuilder<'a, E, Set, Unset, Unset, Unset, C>, PolyCalError<E>> {
+        let dependent_variance: ArrayView1<'a, E> = dependent_variance.into();
+        if dependent_variance
+            .iter()
+            .any(|each| !each.is_finite() || (*each == E::zero()))
+        {
+            return Err(PolyCalError::InvalidData(
+                "dependent variance cannot contain NaN or zeroes".into(),
+            ));
+        }
+        Ok(ProblemBuilder {
             dependent: self.dependent,
             independent: self.independent,
-            dependent_uncertainty: Some(dependent_uncertainty.into()),
-            independent_uncertainty: self.independent_uncertainty,
+            dependent_variance: Some(dependent_variance),
+            independent_variance: self.independent_variance,
             dependent_covariance: self.dependent_covariance,
             independent_covariance: self.independent_covariance,
             strategy: self.strategy,
             constraint: self.constraint,
             typestate: PhantomData,
-        }
+        })
     }
 }
 
-impl<'a, E, C> ProblemBuilder<'a, E, Unset, Set, Unset, Unset, C> {
-    fn with_dependent_uncertainty(
+impl<'a, E: Float, C> ProblemBuilder<'a, E, Unset, Set, Unset, Unset, C> {
+    #[allow(clippy::type_complexity)]
+    /// Attach a variance for the dependent variable
+    ///
+    /// # Errors
+    /// - If the provided values contain any NaN, infinite, or zero values. Note that zeros are not
+    ///     allowed, because the weighted least squares process relies on the inverse of the
+    ///     variance
+    fn with_dependent_variance(
         self,
-        dependent_uncertainty: impl Into<ArrayView1<'a, E>>,
-    ) -> ProblemBuilder<'a, E, Set, Set, Unset, Unset, C> {
-        ProblemBuilder {
+        dependent_variance: impl Into<ArrayView1<'a, E>>,
+    ) -> Result<ProblemBuilder<'a, E, Set, Set, Unset, Unset, C>, PolyCalError<E>> {
+        let dependent_variance: ArrayView1<'a, E> = dependent_variance.into();
+        if dependent_variance
+            .iter()
+            .any(|each| !each.is_finite() || (*each == E::zero()))
+        {
+            return Err(PolyCalError::InvalidData(
+                "dependent variance cannot contain NaN or zeroes".into(),
+            ));
+        }
+        Ok(ProblemBuilder {
             dependent: self.dependent,
             independent: self.independent,
-            dependent_uncertainty: Some(dependent_uncertainty.into()),
-            independent_uncertainty: self.independent_uncertainty,
+            dependent_variance: Some(dependent_variance),
+            independent_variance: self.independent_variance,
             dependent_covariance: self.dependent_covariance,
             independent_covariance: self.independent_covariance,
             strategy: self.strategy,
             constraint: self.constraint,
             typestate: PhantomData,
-        }
+        })
     }
 }
 
-impl<'a, E, C> ProblemBuilder<'a, E, Unset, Unset, Unset, Unset, C> {
-    pub fn with_independent_uncertainty(
+impl<'a, E: Float, C> ProblemBuilder<'a, E, Unset, Unset, Unset, Unset, C> {
+    #[allow(clippy::type_complexity)]
+    /// Attach a variance for the independent variable
+    ///
+    /// # Errors
+    /// - If the provided values contain any NaN, infinite, or zero values. Note that zeros are not
+    ///     allowed, because the weighted least squares process relies on the inverse of the
+    ///     variance
+    pub fn with_independent_variance(
         self,
-        independent_uncertainty: impl Into<ArrayView1<'a, E>>,
-    ) -> ProblemBuilder<'a, E, Unset, Set, Unset, Unset, C> {
-        ProblemBuilder {
+        independent_variance: impl Into<ArrayView1<'a, E>>,
+    ) -> Result<ProblemBuilder<'a, E, Unset, Set, Unset, Unset, C>, PolyCalError<E>> {
+        let independent_variance: ArrayView1<'a, E> = independent_variance.into();
+        if independent_variance
+            .iter()
+            .any(|each| !each.is_finite() || (*each == E::zero()))
+        {
+            return Err(PolyCalError::InvalidData(
+                "independent variance cannot contain NaN or zeroes".into(),
+            ));
+        }
+        Ok(ProblemBuilder {
             dependent: self.dependent,
             independent: self.independent,
-            dependent_uncertainty: self.dependent_uncertainty,
-            independent_uncertainty: Some(independent_uncertainty.into()),
+            dependent_variance: self.dependent_variance,
+            independent_variance: Some(independent_variance),
             dependent_covariance: self.dependent_covariance,
             independent_covariance: self.independent_covariance,
             strategy: self.strategy,
             constraint: self.constraint,
             typestate: PhantomData,
-        }
+        })
     }
 }
 
-impl<'a, E, C> ProblemBuilder<'a, E, Set, Unset, Unset, Unset, C> {
-    pub fn with_independent_uncertainty(
+impl<'a, E: Float, C> ProblemBuilder<'a, E, Set, Unset, Unset, Unset, C> {
+    #[allow(clippy::type_complexity)]
+    /// Attach a variance for the independent variable
+    ///
+    /// # Errors
+    /// - If the provided values contain any NaN, infinite, or zero values. Note that zeros are not
+    ///     allowed, because the weighted least squares process relies on the inverse of the
+    ///     variance
+    pub fn with_independent_variance(
         self,
-        independent_uncertainty: impl Into<ArrayView1<'a, E>>,
-    ) -> ProblemBuilder<'a, E, Set, Set, Unset, Unset, C> {
-        ProblemBuilder {
+        independent_variance: impl Into<ArrayView1<'a, E>>,
+    ) -> Result<ProblemBuilder<'a, E, Set, Set, Unset, Unset, C>, PolyCalError<E>> {
+        let independent_variance: ArrayView1<'a, E> = independent_variance.into();
+        if independent_variance
+            .iter()
+            .any(|each| !each.is_finite() || (*each == E::zero()))
+        {
+            return Err(PolyCalError::InvalidData(
+                "independent variance cannot contain NaN or zeroes".into(),
+            ));
+        }
+        Ok(ProblemBuilder {
             dependent: self.dependent,
             independent: self.independent,
-            dependent_uncertainty: self.dependent_uncertainty,
-            independent_uncertainty: Some(independent_uncertainty.into()),
+            dependent_variance: self.dependent_variance,
+            independent_variance: Some(independent_variance),
             dependent_covariance: self.dependent_covariance,
             independent_covariance: self.independent_covariance,
             strategy: self.strategy,
             constraint: self.constraint,
             typestate: PhantomData,
-        }
+        })
     }
 }
 
@@ -189,8 +271,8 @@ impl<'a, E, C> ProblemBuilder<'a, E, Unset, Unset, Unset, Unset, C> {
         ProblemBuilder {
             dependent: self.dependent,
             independent: self.independent,
-            dependent_uncertainty: self.dependent_uncertainty,
-            independent_uncertainty: self.independent_uncertainty,
+            dependent_variance: self.dependent_variance,
+            independent_variance: self.independent_variance,
             dependent_covariance: Some(dependent_covariance.into()),
             independent_covariance: self.independent_covariance,
             strategy: self.strategy,
@@ -208,8 +290,8 @@ impl<'a, E, C> ProblemBuilder<'a, E, Unset, Unset, Unset, Set, C> {
         ProblemBuilder {
             dependent: self.dependent,
             independent: self.independent,
-            dependent_uncertainty: self.dependent_uncertainty,
-            independent_uncertainty: self.independent_uncertainty,
+            dependent_variance: self.dependent_variance,
+            independent_variance: self.independent_variance,
             dependent_covariance: Some(dependent_covariance.into()),
             independent_covariance: self.independent_covariance,
             strategy: self.strategy,
@@ -227,8 +309,8 @@ impl<'a, E, C> ProblemBuilder<'a, E, Unset, Unset, Unset, Unset, C> {
         ProblemBuilder {
             dependent: self.dependent,
             independent: self.independent,
-            dependent_uncertainty: self.dependent_uncertainty,
-            independent_uncertainty: self.independent_uncertainty,
+            dependent_variance: self.dependent_variance,
+            independent_variance: self.independent_variance,
             dependent_covariance: self.dependent_covariance,
             independent_covariance: Some(independent_covariance.into()),
             strategy: self.strategy,
@@ -246,8 +328,8 @@ impl<'a, E, C> ProblemBuilder<'a, E, Unset, Unset, Set, Unset, C> {
         ProblemBuilder {
             dependent: self.dependent,
             independent: self.independent,
-            dependent_uncertainty: self.dependent_uncertainty,
-            independent_uncertainty: self.independent_uncertainty,
+            dependent_variance: self.dependent_variance,
+            independent_variance: self.independent_variance,
             dependent_covariance: self.dependent_covariance,
             independent_covariance: Some(independent_covariance.into()),
             strategy: self.strategy,
@@ -265,8 +347,8 @@ impl<'a, E, DU, IU, DC, IC> ProblemBuilder<'a, E, DU, IU, DC, IC, Unset> {
         ProblemBuilder {
             dependent: self.dependent,
             independent: self.independent,
-            dependent_uncertainty: self.dependent_uncertainty,
-            independent_uncertainty: self.independent_uncertainty,
+            dependent_variance: self.dependent_variance,
+            independent_variance: self.independent_variance,
             dependent_covariance: self.dependent_covariance,
             independent_covariance: self.independent_covariance,
             strategy: self.strategy,
@@ -305,8 +387,8 @@ impl<'a, E: PartialOrd + Scalar> ProblemBuilder<'a, E, Unset, Set, Unset, Unset,
             y: self.dependent,
             uncertainties: Covariance::Diagonal {
                 ux: None,
-                uy: self.independent_uncertainty.unwrap(), // This is safe as the typestate ensure
-                                                           // it is some
+                uy: self.independent_variance.unwrap(), // This is safe as the typestate ensure
+                                                        // it is some
             },
             domain,
             strategy: self.strategy,
@@ -322,8 +404,8 @@ impl<'a, E: PartialOrd + Scalar> ProblemBuilder<'a, E, Set, Set, Unset, Unset, U
             t,
             y: self.dependent,
             uncertainties: Covariance::Diagonal {
-                ux: Some(self.dependent_uncertainty.unwrap()),
-                uy: self.independent_uncertainty.unwrap(),
+                ux: Some(self.dependent_variance.unwrap()),
+                uy: self.independent_variance.unwrap(),
             },
             domain,
             strategy: self.strategy,
@@ -399,7 +481,7 @@ impl<'a, E: PartialOrd + Scalar, C: Into<Constraint<E>>>
             y: self.dependent,
             uncertainties: Covariance::Diagonal {
                 ux: None,
-                uy: self.independent_uncertainty.unwrap(),
+                uy: self.independent_variance.unwrap(),
             },
             domain,
             strategy: self.strategy,
@@ -417,8 +499,8 @@ impl<'a, E: PartialOrd + Scalar, C: Into<Constraint<E>>>
             t,
             y: self.dependent,
             uncertainties: Covariance::Diagonal {
-                ux: Some(self.dependent_uncertainty.unwrap()),
-                uy: self.independent_uncertainty.unwrap(),
+                ux: Some(self.dependent_variance.unwrap()),
+                uy: self.independent_variance.unwrap(),
             },
             domain,
             strategy: self.strategy,
@@ -464,225 +546,266 @@ impl<'a, E: PartialOrd + Scalar, C: Into<Constraint<E>>>
         }
     }
 }
-//
-//
-// #[cfg(test)]
-// mod test {
-//     use super::ProblemBuilder;
-//     use ndarray::Array1;
-//     use ndarray_rand::rand::{Rng, SeedableRng};
-//     use rand_isaac::Isaac64Rng;
-//     use std::ops::Range;
-//
-//     use crate::eval::Unsure;
-//     use crate::fit::{PolyConstraint, ScoringStrategy};
-//     use crate::ChebyshevPolynomial;
-//
-//     #[test]
-//     fn fit_with_independent_uncertainty_works_in_direct_evaluation() {
-//         let state = 40;
-//         let mut rng = Isaac64Rng::seed_from_u64(state);
-//
-//         let order = 5;
-//         let domain_max = rng.gen::<f64>().abs();
-//         let domain_min = -domain_max;
-//
-//         let mut coeff = vec![];
-//
-//         // Find an input which is suitable for use as a calibration function.
-//         // A calibration function has to be monotonic.
-//         loop {
-//             coeff = (0..order).map(|_| rng.gen()).collect::<Vec<f64>>();
-//             let polynomial = ChebyshevPolynomial {
-//                 coeff: coeff.clone(),
-//                 domain: Range {
-//                     start: domain_min,
-//                     end: domain_max,
-//                 },
-//                 window: Range {
-//                     start: -1.,
-//                     end: 1.,
-//                 },
-//             };
-//             if polynomial.is_monotonic().unwrap() {
-//                 break;
-//             }
-//         }
-//
-//         let polynomial = ChebyshevPolynomial {
-//             coeff: coeff.clone(),
-//             domain: Range {
-//                 start: domain_min,
-//                 end: domain_max,
-//             },
-//             window: Range {
-//                 start: -1.,
-//                 end: 1.,
-//             },
-//         };
-//
-//         let num_calibration_points = rng.gen_range(5000..10000);
-//         let x = (0..num_calibration_points)
-//             .map(|ii| {
-//                 domain_min
-//                     + (domain_max - domain_min) * ii as f64 / (num_calibration_points - 1) as f64
-//             })
-//             .collect::<Array1<_>>();
-//
-//         let polynomial = ChebyshevPolynomial {
-//             coeff: coeff.clone(),
-//             domain: Range {
-//                 start: domain_min,
-//                 end: domain_max,
-//             },
-//             window: Range {
-//                 start: -1.,
-//                 end: 1.,
-//             },
-//         };
-//
-//         let y = x.iter().map(|x| polynomial.eval(*x)).collect::<Array1<_>>();
-//
-//         let uy = y
-//             .iter()
-//             .map(|y| rng.gen_range(1e-5..1e-3) * y)
-//             .collect::<Array1<_>>();
-//
-//         let builder =
-//             ProblemBuilder::new(x.view(), y.view()).with_independent_uncertainty(uy.view());
-//
-//         let problem = builder.build();
-//
-//         let solution = problem.solve(4 * order).unwrap();
-//
-//         let idx = rng.gen_range(0..num_calibration_points);
-//         let x0 = x[idx];
-//         let y0 = y[idx];
-//
-//         let predicted_y = solution
-//             .eval_from_stimulus(Unsure {
-//                 estimate: x0,
-//                 standard_uncertainty: x0 / 100.0,
-//             });
-//
-//         dbg!(&predicted_y);
-//         dbg!((y0 - predicted_y.estimate).abs());
-//         // assert!((y0 - predicted_y.estimate).abs() < predicted_y.standard_uncertainty);
-//     }
-//
-//     #[test]
-//     fn fit_with_constraints_respects_constraints() {
-//         let state = 40;
-//         let mut rng = Isaac64Rng::seed_from_u64(state);
-//
-//         let order = 5;
-//         let domain_max = rng.gen::<f64>().abs();
-//         let domain_min = 0.0;
-//
-//         let intercept_at_t = (- domain_min - domain_max) / (domain_max - domain_min);
-//
-//         let mut coeff = Vec::new();
-//
-//         let constraint = PolyConstraint {
-//             nu: ChebyshevPolynomial {
-//                 coeff: vec![-intercept_at_t, 1.],
-//                 domain: Range {
-//                     start: domain_min,
-//                     end: domain_max,
-//                 },
-//                 window: Range {
-//                     start: -1.,
-//                     end: 1.,
-//                 },
-//             },
-//             mu: ChebyshevPolynomial {
-//                 coeff: vec![0.],
-//                 domain: Range {
-//                     start: domain_min,
-//                     end: domain_max,
-//                 },
-//                 window: Range {
-//                     start: -1.,
-//                     end: 1.,
-//                 },
-//             },
-//         };
-//
-//         // Find an input which is suitable for use as a calibration function.
-//         // A calibration function has to be monotonic.
-//         loop {
-//             coeff = (0..order).map(|_| rng.gen()).collect::<Vec<f64>>();
-//             let polynomial = ChebyshevPolynomial {
-//                 coeff: coeff.clone(),
-//                 domain: Range {
-//                     start: domain_min,
-//                     end: domain_max,
-//                 },
-//                 window: Range {
-//                     start: -1.,
-//                     end: 1.,
-//                 },
-//             };
-//             if polynomial.is_monotonic_with_constraint(&constraint.nu).unwrap() {
-//                 break;
-//             }
-//         }
-//
-//         let num_calibration_points = rng.gen_range(100..500);
-//         let x = (0..num_calibration_points)
-//             .map(|ii| {
-//                 domain_min
-//                     + (domain_max - domain_min) * ii as f64 / (num_calibration_points - 1) as f64
-//             })
-//             .collect::<Array1<_>>();
-//
-//         let polynomial = ChebyshevPolynomial {
-//             coeff,
-//             domain: Range {
-//                 start: domain_min,
-//                 end: domain_max,
-//             },
-//             window: Range {
-//                 start: -1.,
-//                 end: 1.,
-//             },
-//         };
-//
-//         let y = x.iter().map(|x| polynomial.eval(*x)).collect::<Array1<_>>();
-//
-//         let uy = y
-//             .iter()
-//             .map(|y| rng.gen_range(1e-5..1e-3) * y)
-//             .collect::<Array1<_>>();
-//
-//         let builder = ProblemBuilder::new(x.view(), y.view())
-//             .with_independent_uncertainty(uy.view())
-//             .with_constraint(constraint)
-//             .with_scoring_strategy(ScoringStrategy::ChiSquare);
-//
-//         let problem = builder.build();
-//
-//         let solution = problem.solve(5 * order).unwrap();
-//
-//         let idx = rng.gen_range(0..num_calibration_points);
-//         let x0 = x[idx];
-//         let y0 = y[idx];
-//
-//         let predicted_y = solution
-//             .eval_from_stimulus(Unsure {
-//                 estimate: x0,
-//                 standard_uncertainty: x0 / 100.0,
-//             });
-//
-//         dbg!(&predicted_y);
-//         dbg!((y0 - predicted_y.estimate).abs());
-//
-//         let predicted_y = solution
-//             .eval_from_stimulus(Unsure {
-//                 estimate: 0.0,
-//                 standard_uncertainty: x0 / 100.0,
-//             });
-//
-//         dbg!(&predicted_y);
-//     }
-// }
+
+#[cfg(test)]
+mod test {
+    use crate::{ChebyshevBuilder, Constraint, PolynomialSeries, Series};
+
+    use super::ProblemBuilder;
+    use cert::{AbsUncertainty, Uncertainty};
+    use ndarray::Array1;
+    use ndarray_rand::rand::{Rng, SeedableRng};
+    use rand_isaac::Isaac64Rng;
+
+    #[test]
+    fn fit_with_independent_variance_works_in_direct_evaluation() {
+        let state = 40;
+        let mut rng = Isaac64Rng::seed_from_u64(state);
+
+        let order = 5;
+        let domain_max = rng.gen::<f64>().abs();
+        let domain_min = -domain_max;
+        let num_calibration_points = rng.gen_range(50..200);
+
+        #[allow(clippy::cast_precision_loss)]
+        let x = (0..num_calibration_points)
+            .map(|m| {
+                domain_min
+                    + m as f64 * (domain_max - domain_min) / (num_calibration_points as f64 - 1.0)
+            })
+            .collect::<Array1<_>>();
+
+        let mut series = None;
+
+        // Find an input which is suitable for use as a calibration function.
+        // A calibration function has to be monotonic.
+        loop {
+            let coeff = (0..order).map(|_| rng.gen()).collect::<Vec<f64>>();
+            let this = Series::from_coeff(coeff.clone(), x.as_slice().unwrap());
+
+            if this.is_monotonic().unwrap() {
+                let _ = series.replace(this);
+                break;
+            }
+        }
+
+        let series = series.unwrap();
+
+        let y = x.iter().map(|x| series.evaluate(*x)).collect::<Array1<_>>();
+
+        let uy = y
+            .iter()
+            .map(|y| rng.gen_range(1e-5..1e-3) * y)
+            .collect::<Array1<_>>();
+
+        let builder = ProblemBuilder::new(x.view(), y.view())
+            .unwrap()
+            .with_independent_variance(uy.view())
+            .unwrap()
+            .with_scoring_strategy(crate::ScoringStrategy::Aicc);
+
+        let problem = builder.build();
+
+        let solution = problem.solve(4 * order).unwrap();
+
+        let num_tests = 10;
+        for _ in 0..num_tests {
+            let idx = rng.gen_range(0..num_calibration_points);
+            let x0 = x[idx];
+            let y0 = y[idx];
+
+            let predicted_y = solution
+                .response(AbsUncertainty::new(x0, x0 / 100.0))
+                .unwrap();
+            assert!((y0 - predicted_y.mean()).abs() < predicted_y.standard_deviation());
+        }
+    }
+
+    #[test]
+    fn fit_with_additive_constraints_respects_constraints() {
+        let state = 40;
+        let mut rng = Isaac64Rng::seed_from_u64(state);
+
+        let order = 5;
+        let domain_max = rng.gen::<f64>().abs();
+        let domain_min = -domain_max;
+        // let domain_min = 0.0;
+        let domain = domain_min..domain_max;
+
+        let num_calibration_points = rng.gen_range(10..15);
+
+        #[allow(clippy::cast_precision_loss)]
+        let x = (0..num_calibration_points)
+            .map(|m| {
+                domain_min
+                    + m as f64 * (domain_max - domain_min) / (num_calibration_points as f64 - 1.0)
+            })
+            .collect::<Array1<_>>();
+
+        let intercept_at_t = 0.05;
+        dbg!(intercept_at_t);
+
+        let constraint = Constraint {
+            additive: ChebyshevBuilder::new(0)
+                .with_coefficients(vec![intercept_at_t])
+                .on_domain(domain.clone())
+                .build(),
+            // multiplicative: ChebyshevBuilder::new(1)
+            //     .with_coefficients(vec![0.0, 1.0])
+            //     .on_domain(domain.clone())
+            //     .build(),
+            multiplicative: ChebyshevBuilder::new(0)
+                .with_coefficients(vec![1.0])
+                .on_domain(domain.clone())
+                .build(),
+        };
+
+        let mut series = None;
+        // Find an input which is suitable for use as a calibration function.
+        // A calibration function has to be monotonic.
+        loop {
+            let coeff = (0..order).map(|_| rng.gen()).collect::<Vec<f64>>();
+            let this = ChebyshevBuilder::new(order - 1)
+                .with_coefficients(coeff.clone())
+                .on_domain(domain.clone())
+                .build();
+
+            // Check if the *constrained* polynomial is monotonic
+            let constrained =
+                this.clone() * constraint.multiplicative.clone() + constraint.additive.clone();
+
+            if constrained.is_monotonic().unwrap() {
+                let _ = series.replace(this);
+                break;
+            }
+        }
+        let series =
+            series.unwrap() * constraint.multiplicative.clone() + constraint.additive.clone();
+
+        let y = x.iter().map(|x| series.evaluate(*x)).collect::<Array1<_>>();
+
+        let uy = y
+            .iter()
+            .map(|y| rng.gen_range(1e-5..1e-3) * y + 1e-7) // stops a failure at the origin
+            .collect::<Array1<_>>();
+
+        let builder = ProblemBuilder::new(x.view(), y.view())
+            .unwrap()
+            .with_independent_variance(uy.view())
+            .unwrap()
+            .with_constraint(constraint)
+            .with_scoring_strategy(crate::ScoringStrategy::Aicc);
+
+        let problem = builder.build();
+
+        let solution = problem.solve(4 * order).unwrap();
+
+        let num_tests = 10;
+        for _ in 0..num_tests {
+            let idx = rng.gen_range(1..(num_calibration_points - 1));
+            let x0 = x[idx];
+            let y0 = y[idx];
+
+            let predicted_y = solution
+                .response(AbsUncertainty::new(x0, x0 / 100.0))
+                .unwrap();
+
+            assert!((y0 - predicted_y.mean()).abs() < predicted_y.standard_deviation());
+        }
+    }
+
+    #[test]
+    fn fit_with_full_constraints_respects_constraints() {
+        let state = 40;
+        let mut rng = Isaac64Rng::seed_from_u64(state);
+
+        let order = 1;
+        // let domain_max = rng.gen::<f64>().abs();
+        // let domain_min = -domain_max;
+        // let domain_min = 0.0;
+        let domain_max = 1.0;
+        let domain_min = -1.0;
+        let domain = domain_min..domain_max;
+
+        let num_calibration_points = rng.gen_range(20..25);
+
+        #[allow(clippy::cast_precision_loss)]
+        let x = (0..num_calibration_points)
+            .map(|m| {
+                domain_min
+                    + m as f64 * (domain_max - domain_min) / (num_calibration_points as f64 - 1.0)
+            })
+            .collect::<Array1<_>>();
+
+        let intercept_at_t = 0.05;
+        dbg!(intercept_at_t);
+
+        let constraint = Constraint {
+            additive: ChebyshevBuilder::new(0)
+                .with_coefficients(vec![intercept_at_t])
+                .on_domain(domain.clone())
+                .build(),
+            multiplicative: ChebyshevBuilder::new(1)
+                .with_coefficients(vec![0.0, 1.0])
+                .on_domain(domain.clone())
+                .build(),
+        };
+
+        let mut series = None;
+        // Find an input which is suitable for use as a calibration function.
+        // A calibration function has to be monotonic.
+        loop {
+            let coeff = (0..order).map(|_| rng.gen()).collect::<Vec<f64>>();
+            let this = ChebyshevBuilder::new(order - 1)
+                .with_coefficients(coeff.clone())
+                .on_domain(domain.clone())
+                .build();
+
+            // Check if the *constrained* polynomial is monotonic
+            let constrained =
+                this.clone() * constraint.multiplicative.clone() + constraint.additive.clone();
+
+            if constrained.is_monotonic().unwrap() {
+                let _ = series.replace(this);
+                break;
+            }
+        }
+        let series =
+            series.unwrap() * constraint.multiplicative.clone() + constraint.additive.clone();
+
+        let y = x.iter().map(|x| series.evaluate(*x)).collect::<Array1<_>>();
+
+        let uy = y
+            .iter()
+            .map(|y| rng.gen_range(1e-5..1e-3) * y + 1e-7) // stops a failure at the origin
+            .collect::<Array1<_>>();
+
+        let builder = ProblemBuilder::new(x.view(), y.view())
+            .unwrap()
+            .with_independent_variance(uy.view())
+            .unwrap()
+            .with_constraint(constraint)
+            .with_scoring_strategy(crate::ScoringStrategy::Aicc);
+
+        println!("building problem");
+        let problem = builder.build();
+
+        println!("solving problem");
+        let solution = problem.solve(4 * order).unwrap();
+
+        println!("solved...");
+        let num_tests = 10;
+        for _ in 0..num_tests {
+            let idx = rng.gen_range(1..(num_calibration_points - 1));
+            let x0 = x[idx];
+            let y0 = y[idx];
+
+            let predicted_y = solution
+                .response(AbsUncertainty::new(x0, x0 / 100.0))
+                .unwrap();
+
+            println!("expected: {y0}, predicted: {}", predicted_y.mean());
+            // assert!((y0 - predicted_y.mean()).abs() < predicted_y.standard_deviation());
+        }
+    }
+}

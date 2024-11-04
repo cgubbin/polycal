@@ -79,8 +79,6 @@ impl<'a, E: Lapack + Scalar<Real = E> + ScalarOperand> WeightedLeastSquares<'a, 
             .inv()
             .map_err(SolverError::Inverse)?;
 
-        // let covariance = (lhs.t().dot(&lhs)).inv()? / outer_product(&scaling, &scaling)?;
-
         Ok(Solution {
             coeff,
             dependent_central_values: None,
@@ -166,12 +164,12 @@ mod test {
         degree: usize,
     ) -> WeightedLeastSquares<'a, E>
     where
-        E: PartialOrd + Scalar<Real = E> + ScalarOperand + Lapack + FloatCore,
+        E: Float + PartialOrd + Scalar<Real = E> + ScalarOperand + Lapack + FloatCore,
     {
-        let builder = ProblemBuilder::new(x, y);
+        let builder = ProblemBuilder::new(x, y).unwrap();
         let problem = match &uncertainty {
             Uncertainty::None => builder.build(),
-            Uncertainty::Diagonal(uy) => builder.with_independent_uncertainty(*uy).build(),
+            Uncertainty::Diagonal(uy) => builder.with_independent_variance(*uy).unwrap().build(),
             Uncertainty::Full(vy) => builder.with_independent_covariance(*vy).build(),
         };
 
@@ -186,7 +184,7 @@ mod test {
 
     fn generate_test_data<E>(degree: usize) -> (Vec<E>, Vec<E>)
     where
-        E: Scalar<Real = E> + ScalarOperand + PartialOrd + Lapack + FloatCore,
+        E: Float + Scalar<Real = E> + ScalarOperand + PartialOrd + Lapack + FloatCore,
         Standard: Distribution<E>,
     {
         let state = 42;

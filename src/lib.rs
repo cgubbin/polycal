@@ -58,7 +58,7 @@
 //!     .collect();
 //!
 //! let problem = ProblemBuilder::new(stimulus.view(), response.view())
-//!     .with_independent_uncertainty(independent_uncertainty.view())
+//!     .with_independent_variance(independent_uncertainty.view())
 //!     .build();
 //! ```
 //! Note that all methods with [`panic`] if the provided stimulus, response and uncertainties
