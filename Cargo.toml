@@ -8,22 +8,24 @@ description = "methods for fitting and using polynomial calibration functions fo
 
 
 [dependencies]
-ndarray = { version = "0.15", features = ["blas"] }
-blas-src = { version = "0.9", features = ["openblas"] }
-openblas-src = { version = "0.10", features = ["cblas", "system"] }
-
-argmin = { version = "0.8.1", features = ["_ndarrayl"] }
-ndarray-linalg = "0.16.0"
+cert = "0.1"
 num-traits = "0.2"
-argmin-math = "0.3.0"
 tracing = "0.1.40"
-ndarray-rand = "0.14.0"
 rand_isaac = "0.3.0"
-thiserror = "1.0.50"
+thiserror = "1.0.67"
 
 # pin to avoid error in 0.3.30
-time = "0.3.29"
-cert = "0.1"
+# time = "0.3.29"
+time = "0.3.36"
+
+argmin = { version = "0.10", features = ["_ndarrayl"] }
+argmin-math = "0.4.0"
+argmin-observer-slog = "0.1.0"
+blas-src = { version = "0.9", features = ["openblas"] }
+openblas-src = { version = "0.10", features = ["cblas", "system"] }
+ndarray = { version = "0.15", features = ["blas"] }
+ndarray-linalg = "0.16.0"
+ndarray-rand = "0.14.0"
 
 
 [dev-dependencies]

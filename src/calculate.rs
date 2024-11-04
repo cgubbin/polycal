@@ -12,12 +12,10 @@
 //! the input and combining it with that on the calculated fitting coefficients.
 
 use argmin::{
-    core::{
-        observers::{ObserverMode, SlogLogger},
-        ArgminFloat, CostFunction, Executor, Gradient, Hessian,
-    },
+    core::{observers::ObserverMode, ArgminFloat, CostFunction, Executor, Gradient, Hessian},
     solver::{linesearch::MoreThuenteLineSearch, newton::NewtonCG},
 };
+use argmin_observer_slog::SlogLogger;
 use cert::{AbsUncertainty, Uncertainty};
 use ndarray::{Array1, Array2, ArrayView1, ScalarOperand};
 use ndarray_linalg::{Lapack, Scalar};
@@ -47,15 +45,6 @@ pub struct Fit<E> {
     /// Constraint used in the fit procedure
     pub(crate) constraint: Option<Constraint<E>>,
 }
-
-// #[derive(Copy, Clone, Debug)]
-// /// A value with associated estimate (expectation) and standard uncertainty.
-// pub struct AbsUncertainty<E> {
-//     /// Central value, or mean, of the measurement
-//     pub estimate: E,
-//     /// Standard deviation of the measurement
-//     pub standard_uncertainty: E,
-// }
 
 impl<E> Fit<E> {
     /// Returns the range of stimulus values used in the calibration procedure.
