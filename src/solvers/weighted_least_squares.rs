@@ -10,9 +10,7 @@ pub struct WeightedLeastSquares<'a, E> {
     pub(crate) h: Array2<E>,
 }
 
-impl<'a, E: Lapack + Scalar<Real = E> + ScalarOperand> SolveSystem<E>
-    for WeightedLeastSquares<'a, E>
-{
+impl<E: Lapack + Scalar<Real = E> + ScalarOperand> SolveSystem<E> for WeightedLeastSquares<'_, E> {
     fn solve(&self) -> ::std::result::Result<Solution<E>, SolverError> {
         match self.uncertainty {
             Uncertainty::None => self.solve_unweighted(),

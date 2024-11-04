@@ -99,13 +99,13 @@ pub struct Problem<'a, E> {
     pub(crate) constraint: Option<Constraint<E>>,
 }
 
-impl<'a, E> Problem<'a, E> {
+impl<E> Problem<'_, E> {
     fn number_of_datapoints(&self) -> usize {
         self.t.len()
     }
 }
 
-impl<'a, E> Problem<'a, E>
+impl<E> Problem<'_, E>
 where
     E: Scalar<Real = E> + PartialOrd + ScalarOperand + Lapack + FloatCore,
 {

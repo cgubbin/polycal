@@ -9,7 +9,7 @@ pub struct TotalLeastSquares<'a, E> {
     pub(crate) h: Array2<E>,
 }
 
-impl<'a, E: Lapack + Scalar<Real = E> + ScalarOperand> SolveSystem<E> for TotalLeastSquares<'a, E> {
+impl<E: Lapack + Scalar<Real = E> + ScalarOperand> SolveSystem<E> for TotalLeastSquares<'_, E> {
     fn solve(&self) -> Result<Solution<E>, SolverError> {
         match (&self.uncertainty_x, &self.uncertainty_y) {
             (Uncertainty::Diagonal(ux), Uncertainty::Diagonal(uy)) => self.solve_diagonal(*ux, *uy),

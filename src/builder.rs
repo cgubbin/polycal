@@ -96,7 +96,7 @@ impl<'a, E> ProblemBuilder<'a, E, Unset, Unset, Unset, Unset, Unset> {
     }
 }
 
-impl<'a, E, DU, IU, DC, IC, C> ProblemBuilder<'a, E, DU, IU, DC, IC, C> {
+impl<E, DU, IU, DC, IC, C> ProblemBuilder<'_, E, DU, IU, DC, IC, C> {
     #[must_use]
     /// Attach a scoring strategy.
     pub const fn with_scoring_strategy(mut self, scoring_strategy: ScoringStrategy) -> Self {
