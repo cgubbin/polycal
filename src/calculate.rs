@@ -18,6 +18,7 @@ use argmin::{
     },
     solver::{linesearch::MoreThuenteLineSearch, newton::NewtonCG},
 };
+use cert::{AbsUncertainty, Uncertainty};
 use ndarray::{Array1, Array2, ArrayView1, ScalarOperand};
 use ndarray_linalg::{Lapack, Scalar};
 use ndarray_rand::{
@@ -27,7 +28,6 @@ use ndarray_rand::{
 use num_traits::{float::FloatCore, Float};
 use std::ops::Range;
 use tracing::{event, Level};
-use uncertainty::{AbsUncertainty, Uncertainty};
 
 use crate::chebyshev::{Polynomial, PolynomialSeries, Series};
 use crate::error::Kind;
@@ -103,7 +103,10 @@ where
     /// # Panics
     /// - If distribution creation fails (unlikely)
     #[must_use]
-    pub fn draw<R: Rng>(&self, rng: &mut R) -> Self {
+    pub fn draw<R: Rng + ?Sized>(
+        &self,
+        rng: &mut R,
+    ) -> Result<Self, ndarray_rand::rand_distr::NormalError> {
         let coeff = self.solution.coeff();
         let var = self.covariance.diag();
 
@@ -117,11 +120,10 @@ where
                 Ok(dist) => Ok(dist.sample(rng)),
                 Err(e) => Err(e),
             })
-            .collect::<Result<_, _>>()
-            .unwrap();
+            .collect::<Result<_, _>>()?;
 
         fit.solution.set_coeff(sampled_coeff);
-        fit
+        Ok(fit)
     }
 
     /// Given a new set of coefficients, creates a new [`Fit`] with those as the central estimates.
@@ -156,7 +158,20 @@ impl<
     /// this method returns an error.
     #[tracing::instrument(skip(self))]
     pub fn response(&self, stimulus: AbsUncertainty<E>) -> PolyCalResult<AbsUncertainty<E>, E> {
-        if !self.solution().domain().contains(&stimulus.mean()) {
+        if !self.stimulus_domain().contains(&stimulus.mean()) {
+            // //TODO: This is a horrible hack, because the solver sometimes walks out of the domain
+            // //and we still want to return something... This is really a thing the caller should
+            // //deal with but for now it is here...
+            // if stimulus.mean() < self.stimulus_domain().start {
+            //     let t = -E::one();
+            //     let estimate = self.evaluate_direct(t);
+            //     dbg!(&estimate);
+            //     let standard_uncertainty =
+            //         self.evaluate_direct_uncertainty(t, stimulus.standard_deviation());
+            //     dbg!(&standard_uncertainty);
+            //
+            //     return Ok(AbsUncertainty::new(estimate, standard_uncertainty));
+            // }
             return Err(PolyCalError::OutOfRange {
                 value: stimulus.mean(),
                 range: self.solution().domain(),
@@ -165,10 +180,12 @@ impl<
         }
         let t = to_scaled(stimulus.mean(), self.stimulus_domain());
 
-        event!(Level::INFO, scaled = t, "evaluating series");
+        // event!(Level::INFO, scaled = t, "evaluating series"); # TODO reinstate when testing is
+        // complete
         let estimate = self.evaluate_direct(t);
 
-        event!(Level::INFO, estimate = estimate, "evaluating uncertainty");
+        // event!(Level::INFO, estimate = estimate, "evaluating uncertainty"); # TODO reinstate
+        // when testing is complete
         let standard_uncertainty =
             self.evaluate_direct_uncertainty(t, stimulus.standard_deviation());
 
@@ -271,7 +288,7 @@ where
 
         let scaled_estimate = self.evaluate_inverse(response.mean(), guess, max_iter)?;
 
-        event!(Level::INFO, "evaluating uncertainty");
+        // event!(Level::INFO, "evaluating uncertainty"); # reinstate when testing is complete
         let scaled_standard_uncertainty =
             self.evaluate_inverse_uncertainty(scaled_estimate, response.standard_deviation());
 
@@ -517,11 +534,13 @@ where
                 .with_bounds(E::from(1e-8).unwrap(), E::from(1e-1).unwrap())?;
 
             // Set up solver
-            let solver = NewtonCG::new(linesearch);
+            let solver = NewtonCG::new(linesearch)
+                .with_tolerance(E::from(f64::EPSILON).unwrap())
+                .unwrap();
 
             // Run solver
             match Executor::new(cost, solver)
-                .configure(|state| state.param(init_param).max_iters(50))
+                .configure(|state| state.param(init_param).max_iters(500))
                 .add_observer(SlogLogger::term(), ObserverMode::Never)
                 .run()
             {
@@ -545,6 +564,7 @@ where
 
 #[cfg(test)]
 mod test {
+    use cert::{AbsUncertainty, Uncertainty};
     use ndarray::{Array1, Array2, ScalarOperand};
     use ndarray_linalg::{Lapack, Scalar};
     use ndarray_rand::{
@@ -554,7 +574,6 @@ mod test {
     use num_traits::float::FloatCore;
     use rand_isaac::Isaac64Rng;
     use std::ops::Range;
-    use uncertainty::{AbsUncertainty, Uncertainty};
 
     use super::Fit;
     use crate::chebyshev::{PolynomialSeries, Series};

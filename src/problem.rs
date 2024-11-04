@@ -52,6 +52,36 @@ pub struct Constraint<E> {
     pub(crate) multiplicative: Series<E>,
 }
 
+impl<E: FloatCore + PartialOrd + Clone + Scalar<Real = E>> Constraint<E> {
+    /// Create a new constraint
+    ///
+    /// # Errors
+    /// - If the constraint is not monotonic
+    pub fn zero_crossing(independent: ArrayView1<'_, E>, dependent: ArrayView1<'_, E>) -> Self {
+        use crate::ChebyshevBuilder;
+        let multiplicative = ChebyshevBuilder::new(1)
+            .with_coefficients(vec![E::zero(), E::one()])
+            .on_domain_from(dependent.as_slice().unwrap())
+            .unwrap()
+            .on_window_from(independent.as_slice().unwrap())
+            .unwrap()
+            .build();
+
+        let additive = ChebyshevBuilder::new(0)
+            .with_coefficients(vec![E::zero()])
+            .on_domain_from(dependent.as_slice().unwrap())
+            .unwrap()
+            .on_window_from(independent.as_slice().unwrap())
+            .unwrap()
+            .build();
+
+        Self {
+            additive,
+            multiplicative,
+        }
+    }
+}
+
 /// Problem abstraction
 ///
 /// Problems are created using a [`crate::ProblemBuilder`] which ensures the type-state of uncertainties
@@ -94,16 +124,16 @@ where
                 Ok(fit) => match self.check_is_monotonic(fit.solution()) {
                     Ok(true) => Some(fit),
                     Ok(false) => {
-                        eprintln!("found non-monotonic solution");
+                        tracing::error!("found non-monotonic solution");
                         None
                     }
                     Err(err) => {
-                        eprintln!("{err:?}");
+                        tracing::error!("{err:?}");
                         None
                     }
                 },
                 Err(err) => {
-                    eprintln!("{err:?}");
+                    tracing::error!("{err:?}");
                     None
                 }
             })
