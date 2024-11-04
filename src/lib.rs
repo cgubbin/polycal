@@ -109,6 +109,8 @@ mod problem;
 mod solvers;
 mod utils;
 
+extern crate blas_src;
+
 pub type PolyCalResult<T, E> = ::std::result::Result<T, PolyCalError<E>>;
 
 pub use builder::{ProblemBuilder, Set, Unset};
