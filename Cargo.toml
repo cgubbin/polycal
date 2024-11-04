@@ -3,7 +3,8 @@ name = "polycal"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-publish = ["sensorium-tl"]
+authors = ["Christopher Gubbin <chris.gubbin@gmail.com>"]
+description = "methods for fitting and using polynomial calibration functions following ISO/TS 28038"
 
 
 [dependencies]
@@ -23,7 +24,6 @@ thiserror = "1.0.50"
 # pin to avoid error in 0.3.30
 time = "0.3.29"
 cert = "0.1"
-
 
 
 [dev-dependencies]
