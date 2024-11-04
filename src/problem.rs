@@ -16,6 +16,7 @@ use crate::utils::find_limits;
 use crate::PolyCalError;
 
 /// Different scoring strategies for fit procedure
+#[derive(Copy, Clone, Debug)]
 pub enum ScoringStrategy {
     /// Akaike's method
     Aic,
@@ -54,35 +55,17 @@ pub struct Constraint<E> {
 
 impl<E: FloatCore + PartialOrd + Clone + Scalar<Real = E>> Constraint<E> {
     /// Create a new constraint which enforces that the fit polynomial passes through the origin
-    ///
-    /// # Errors
-    /// - If the constraint is not monotonic
-    /// - In any values in the dependent or independent data are not finite
-    ///
-    /// # Panics
-    /// - If data in the independent or dependent values is not stored in contiguous standard
-    ///     order, conversion to a slice will fail.
-    pub fn through_origin(
-        independent: ArrayView1<'_, E>,
-        dependent: ArrayView1<'_, E>,
-    ) -> Result<Self, ChebyshevError> {
-        use crate::ChebyshevBuilder;
-        let multiplicative = ChebyshevBuilder::new(1)
-            .with_coefficients(vec![E::zero(), E::one()])
-            .on_domain_from(dependent.as_slice().unwrap())?
-            .on_window_from(independent.as_slice().unwrap())?
-            .build();
-
-        let additive = ChebyshevBuilder::new(0)
-            .with_coefficients(vec![E::zero()])
-            .on_domain_from(dependent.as_slice().unwrap())?
-            .on_window_from(independent.as_slice().unwrap())?
-            .build();
-
-        Ok(Self {
-            additive,
-            multiplicative,
-        })
+    pub fn passing_through_origin(domain: Range<E>) -> Self {
+        Self {
+            additive: ChebyshevBuilder::new(0)
+                .with_coefficients(vec![E::zero()])
+                .on_domain(domain.clone())
+                .build(),
+            multiplicative: ChebyshevBuilder::new(1)
+                .with_coefficients(vec![E::zero(), E::one()])
+                .on_domain(domain)
+                .build(),
+        }
     }
 }
 
@@ -94,6 +77,7 @@ pub struct Problem<'a, E> {
     pub(crate) t: Array1<E>,
     pub(crate) y: ArrayView1<'a, E>,
     pub(crate) uncertainties: Covariance<'a, E>,
+    // The range of independent values
     pub(crate) domain: Range<E>,
     pub(crate) strategy: ScoringStrategy,
     pub(crate) constraint: Option<Constraint<E>>,
@@ -233,15 +217,35 @@ where
     }
 
     fn chi_2(&self, fit: &Series<E>) -> E {
-        self.t.iter().zip(self.y).fold(E::zero(), |a, (t, y)| {
-            a + Scalar::powi(
-                *y - self.constraint.as_ref().map_or_else(
-                    || fit.evaluate(*t),
-                    |constraint| fit.evaluate(*t) * constraint.multiplicative.evaluate(*t),
-                ),
-                2,
-            )
-        })
+        match self.uncertainties {
+            Covariance::Diagonal { uy, .. } => {
+                self.t
+                    .iter()
+                    .zip(self.y)
+                    .zip(uy)
+                    .fold(E::zero(), |a, ((t, y), uy)| {
+                        a + Scalar::powi(
+                            *y - self.constraint.as_ref().map_or_else(
+                                || fit.evaluate(*t),
+                                |constraint| {
+                                    fit.evaluate(*t) * constraint.multiplicative.evaluate(*t)
+                                },
+                            ),
+                            2,
+                        ) / Scalar::powi(*uy, 2)
+                    })
+            }
+            // TODO: This does not work when the uncertainties do not exist. Re-read the ISO
+            _ => self.t.iter().zip(self.y).fold(E::zero(), |a, (t, y)| {
+                a + Scalar::powi(
+                    *y - self.constraint.as_ref().map_or_else(
+                        || fit.evaluate(*t),
+                        |constraint| fit.evaluate(*t) * constraint.multiplicative.evaluate(*t),
+                    ),
+                    2,
+                )
+            }),
+        }
     }
 
     #[tracing::instrument(skip(self))]

@@ -77,6 +77,16 @@ impl<E: Scalar> Fit<E> {
     pub fn variance(&self) -> ArrayView1<'_, E> {
         self.covariance.diag()
     }
+
+    // Returns the width of the response domain
+    //
+    // This is used when we solve numerically for the root of the equation system. It is useful in
+    // that case to rescale the cost function, jacobian and hessian by the width of the domain. If
+    // not then the calculation may not advance, as the gradient may be too small to show
+    // improvement.
+    fn solver_scaling(&self) -> E {
+        E::one() / (self.response_domain.end - self.response_domain.start)
+    }
 }
 
 impl<E: num_traits::Float + Scalar<Real = E>> Fit<E>
@@ -282,6 +292,9 @@ where
         // event!(Level::INFO, "evaluating uncertainty"); # reinstate when testing is complete
         let scaled_standard_uncertainty =
             self.evaluate_inverse_uncertainty(scaled_estimate, response.standard_deviation());
+        // let standard_uncertainty = Scalar::abs(
+        // self.evaluate_inverse_uncertainty(scaled_estimate, response.standard_uncertainty),
+        // );
 
         // Scale back to the true data type
         let estimate = crate::utils::to_unscaled(scaled_estimate, self.stimulus_domain());

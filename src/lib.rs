@@ -111,7 +111,7 @@ mod utils;
 
 pub type PolyCalResult<T, E> = ::std::result::Result<T, PolyCalError<E>>;
 
-pub use builder::ProblemBuilder;
+pub use builder::{ProblemBuilder, Set, Unset};
 pub use calculate::Fit;
 pub use chebyshev::{ChebyshevBuilder, PolynomialSeries, Series};
 pub use error::PolyCalError;
