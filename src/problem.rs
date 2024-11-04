@@ -29,11 +29,11 @@ pub enum ScoringStrategy {
 
 pub enum Covariance<'a, E> {
     None,
-    Uncertainty {
+    Diagonal {
         ux: Option<ArrayView1<'a, E>>,
         uy: ArrayView1<'a, E>,
     },
-    Covariance {
+    Matrix {
         vx: Option<ArrayView2<'a, E>>,
         vy: ArrayView2<'a, E>,
     },
@@ -53,32 +53,36 @@ pub struct Constraint<E> {
 }
 
 impl<E: FloatCore + PartialOrd + Clone + Scalar<Real = E>> Constraint<E> {
-    /// Create a new constraint
+    /// Create a new constraint which enforces that the fit polynomial passes through the origin
     ///
     /// # Errors
     /// - If the constraint is not monotonic
-    pub fn zero_crossing(independent: ArrayView1<'_, E>, dependent: ArrayView1<'_, E>) -> Self {
+    /// - In any values in the dependent or independent data are not finite
+    ///
+    /// # Panics
+    /// - If data in the independent or dependent values is not stored in contiguous standard
+    ///     order, conversion to a slice will fail.
+    pub fn through_origin(
+        independent: ArrayView1<'_, E>,
+        dependent: ArrayView1<'_, E>,
+    ) -> Result<Self, ChebyshevError> {
         use crate::ChebyshevBuilder;
         let multiplicative = ChebyshevBuilder::new(1)
             .with_coefficients(vec![E::zero(), E::one()])
-            .on_domain_from(dependent.as_slice().unwrap())
-            .unwrap()
-            .on_window_from(independent.as_slice().unwrap())
-            .unwrap()
+            .on_domain_from(dependent.as_slice().unwrap())?
+            .on_window_from(independent.as_slice().unwrap())?
             .build();
 
         let additive = ChebyshevBuilder::new(0)
             .with_coefficients(vec![E::zero()])
-            .on_domain_from(dependent.as_slice().unwrap())
-            .unwrap()
-            .on_window_from(independent.as_slice().unwrap())
-            .unwrap()
+            .on_domain_from(dependent.as_slice().unwrap())?
+            .on_window_from(independent.as_slice().unwrap())?
             .build();
 
-        Self {
+        Ok(Self {
             additive,
             multiplicative,
-        }
+        })
     }
 }
 
@@ -257,26 +261,26 @@ where
                 h: design_matrix,
             }
             .solve(),
-            Covariance::Uncertainty { ux, uy } if ux.is_none() => WeightedLeastSquares {
+            Covariance::Diagonal { ux, uy } if ux.is_none() => WeightedLeastSquares {
                 y,
                 uncertainty: Uncertainty::Diagonal(uy),
                 h: design_matrix,
             }
             .solve(),
-            Covariance::Covariance { vx, vy } if vx.is_none() => WeightedLeastSquares {
+            Covariance::Matrix { vx, vy } if vx.is_none() => WeightedLeastSquares {
                 y,
                 uncertainty: Uncertainty::Full(vy),
                 h: design_matrix,
             }
             .solve(),
-            Covariance::Uncertainty { ux, uy } => TotalLeastSquares {
+            Covariance::Diagonal { ux, uy } => TotalLeastSquares {
                 y,
                 uncertainty_x: Uncertainty::Diagonal(ux.unwrap()),
                 uncertainty_y: Uncertainty::Diagonal(uy),
                 h: design_matrix,
             }
             .solve(),
-            Covariance::Covariance { vx, vy } => TotalLeastSquares {
+            Covariance::Matrix { vx, vy } => TotalLeastSquares {
                 y,
                 uncertainty_x: Uncertainty::Full(vx.unwrap()),
                 uncertainty_y: Uncertainty::Full(vy),

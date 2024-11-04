@@ -92,8 +92,8 @@
 //!
 //! # TODO
 //! - Currently polycal can only account for errors in the independent variables. In future a total
-//! least squares algorithm should be implemented to allow use of errors in both independent and
-//! dependent variables.
+//!     least squares algorithm should be implemented to allow use of errors in both independent and
+//!     dependent variables.
 //!
 //!
 //!

@@ -296,14 +296,14 @@ impl<'a, E: PartialOrd + Scalar> ProblemBuilder<'a, E, Unset, Set, Unset, Unset,
     /// Build a problem
     ///
     /// # Panics
-    /// Should not panic, the typestate ensures the `unwrap` is Ok
+    /// The function should not panic, the typestate prevents an invalid state, ensuring the `unwrap` is Ok
     pub fn build(self) -> Problem<'a, E> {
         let Rescaled { t, domain } = form_rescaled_variables(self.independent);
 
         Problem {
             t,
             y: self.dependent,
-            uncertainties: Covariance::Uncertainty {
+            uncertainties: Covariance::Diagonal {
                 ux: None,
                 uy: self.independent_uncertainty.unwrap(), // This is safe as the typestate ensure
                                                            // it is some
@@ -321,7 +321,7 @@ impl<'a, E: PartialOrd + Scalar> ProblemBuilder<'a, E, Set, Set, Unset, Unset, U
         Problem {
             t,
             y: self.dependent,
-            uncertainties: Covariance::Uncertainty {
+            uncertainties: Covariance::Diagonal {
                 ux: Some(self.dependent_uncertainty.unwrap()),
                 uy: self.independent_uncertainty.unwrap(),
             },
@@ -338,7 +338,7 @@ impl<'a, E: PartialOrd + Scalar> ProblemBuilder<'a, E, Unset, Unset, Unset, Set,
         Problem {
             t,
             y: self.dependent,
-            uncertainties: Covariance::Covariance {
+            uncertainties: Covariance::Matrix {
                 vx: None,
                 vy: self.independent_covariance.unwrap(),
             },
@@ -355,7 +355,7 @@ impl<'a, E: PartialOrd + Scalar> ProblemBuilder<'a, E, Unset, Unset, Set, Set, U
         Problem {
             t,
             y: self.dependent,
-            uncertainties: Covariance::Covariance {
+            uncertainties: Covariance::Matrix {
                 vx: Some(self.dependent_covariance.unwrap()),
                 vy: self.independent_covariance.unwrap(),
             },
@@ -386,13 +386,18 @@ impl<'a, E: PartialOrd + Scalar, C: Into<Constraint<E>>>
 impl<'a, E: PartialOrd + Scalar, C: Into<Constraint<E>>>
     ProblemBuilder<'a, E, Unset, Set, Unset, Unset, C>
 {
+    #[must_use]
+    /// Build a problem
+    ///
+    /// # Panics
+    /// The function should not panic, the typestate prevents an invalid state, ensuring the `unwrap` is Ok
     pub fn build(self) -> Problem<'a, E> {
         let Rescaled { t, domain } = form_rescaled_variables(self.independent);
 
         Problem {
             t,
             y: self.dependent,
-            uncertainties: Covariance::Uncertainty {
+            uncertainties: Covariance::Diagonal {
                 ux: None,
                 uy: self.independent_uncertainty.unwrap(),
             },
@@ -411,7 +416,7 @@ impl<'a, E: PartialOrd + Scalar, C: Into<Constraint<E>>>
         Problem {
             t,
             y: self.dependent,
-            uncertainties: Covariance::Uncertainty {
+            uncertainties: Covariance::Diagonal {
                 ux: Some(self.dependent_uncertainty.unwrap()),
                 uy: self.independent_uncertainty.unwrap(),
             },
@@ -430,7 +435,7 @@ impl<'a, E: PartialOrd + Scalar, C: Into<Constraint<E>>>
         Problem {
             t,
             y: self.dependent,
-            uncertainties: Covariance::Covariance {
+            uncertainties: Covariance::Matrix {
                 vx: None,
                 vy: self.independent_covariance.unwrap(),
             },
@@ -449,7 +454,7 @@ impl<'a, E: PartialOrd + Scalar, C: Into<Constraint<E>>>
         Problem {
             t,
             y: self.dependent,
-            uncertainties: Covariance::Covariance {
+            uncertainties: Covariance::Matrix {
                 vx: Some(self.dependent_covariance.unwrap()),
                 vy: self.independent_covariance.unwrap(),
             },

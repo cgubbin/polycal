@@ -100,9 +100,11 @@ where
     /// underlying expectations are replaced, and are no longer a good estimate of the central
     /// values of the distribution.
     ///
+    /// # Errors
+    /// - If any of the covariance values are not finite, or are negative
+    ///
     /// # Panics
     /// - If distribution creation fails (unlikely)
-    #[must_use]
     pub fn draw<R: Rng + ?Sized>(
         &self,
         rng: &mut R,
@@ -134,7 +136,7 @@ where
     ///
     /// # Panics
     /// - If the length of the passed coefficient vector is not equal to the number of coefficients
-    /// associated with the polynomial.
+    ///     associated with the polynomial.
     #[must_use]
     pub fn from_coeff(&self, coeff: &[E]) -> Self {
         assert_eq!(coeff.len(), self.num_coeff());

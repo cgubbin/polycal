@@ -74,7 +74,7 @@ pub trait PolynomialSeries<E: PartialOrd + Scalar<Real = E>>: Clone + Sized {
     ///
     /// # Errors
     /// - If there is an error calculating the roots of the polynomial, or building the companion
-    /// matrix
+    ///     matrix
     fn is_monotonic(&self) -> Result<bool, ChebyshevError> {
         let derivative = self.derivative(1);
         derivative.roots_in_window()
