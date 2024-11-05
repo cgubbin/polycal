@@ -21,6 +21,11 @@ jobs:
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
+      - name: Install openblas
+        run: | 
+          sudo apt-get update
+          sudo apt-get -y install libopenblas-dev
+
       - name: Generate code coverage
         run: cargo +nightly llvm-cov --doctests --workspace --lcov --output-path lcov.info
 
