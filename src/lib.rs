@@ -71,19 +71,67 @@
 //!
 //! Given a [`Fit`] we can reconstruct unknown response from known stimulus values. This uses the
 //! calculated polynomial series directly.
-//! ```ignore
-//! use polycal::Unsure;
+//! ```
+//! use polycal::{AbsUncertainty, Uncertainty};
+//! use ndarray::Array1;
+//! use polycal::ProblemBuilder;
 //!
-//! let known_stimulus = Unsure { estimate: 1.0, standard_uncertainty: 0.01 };
+//! let a = 1.;
+//! let b = 2.;
+//! let stimulus: Array1<f64> = Array1::range(0., 10., 0.5);
+//! let num_data_points = stimulus.len();
+//! let response: Array1<f64> = stimulus
+//!     .iter()
+//!     .map(|x| a + b * x)
+//!     .collect();
+//! let independent_uncertainty: Array1<f64> = response
+//!     .iter()
+//!     .map(|x| x / 1000.0)
+//!     .collect();
+//!
+//! let problem = ProblemBuilder::new(stimulus.view(), response.view())
+//!     .unwrap()
+//!     .with_independent_variance(independent_uncertainty.view())
+//!     .unwrap()
+//!     .build();
+//!
+//! let maximum_degree = 5;
+//! let best_fit = problem.solve(maximum_degree).unwrap();
+//!
+//! let known_stimulus = AbsUncertainty::new(1.0, 0.01);
 //! let estimated_response = best_fit.response(known_stimulus);
 //! ```
 //! Alternatively we can calculate unknown stimulus values from known response values. This
 //! numerically minimises the residual of the fit. An initial guess and maximum iteration count can
 //! be provided.
-//! ```ignore
-//! use polycal::Unsure;
+//! ```
+//! use polycal::{AbsUncertainty, Uncertainty};
+//! use ndarray::Array1;
+//! use polycal::ProblemBuilder;
 //!
-//! let known_response = Unsure { estimate: 1.0, standard_uncertainty: 0.01 };
+//! let a = 1.;
+//! let b = 2.;
+//! let stimulus: Array1<f64> = Array1::range(0., 10., 0.5);
+//! let num_data_points = stimulus.len();
+//! let response: Array1<f64> = stimulus
+//!     .iter()
+//!     .map(|x| a + b * x)
+//!     .collect();
+//! let independent_uncertainty: Array1<f64> = response
+//!     .iter()
+//!     .map(|x| x / 1000.0)
+//!     .collect();
+//!
+//! let problem = ProblemBuilder::new(stimulus.view(), response.view())
+//!     .unwrap()
+//!     .with_independent_variance(independent_uncertainty.view())
+//!     .unwrap()
+//!     .build();
+//!
+//! let maximum_degree = 5;
+//! let best_fit = problem.solve(maximum_degree).unwrap();
+//!
+//! let known_response = AbsUncertainty::new(1.0, 0.01);
 //! let initial_guess = None;
 //! let max_iter = Some(100);
 //! let estimated_stimulus = best_fit.stimulus(
@@ -92,13 +140,6 @@
 //!     max_iter
 //!     );
 //! ```
-//!
-//! # TODO
-//! - Currently polycal can only account for errors in the independent variables. In future a total
-//!     least squares algorithm should be implemented to allow use of errors in both independent and
-//!     dependent variables.
-//!
-//!
 //!
 #![allow(dead_code)]
 #![warn(clippy::pedantic)]
@@ -118,6 +159,7 @@ pub type PolyCalResult<T, E> = ::std::result::Result<T, PolyCalError<E>>;
 
 pub use builder::{ProblemBuilder, Set, Unset};
 pub use calculate::Fit;
+pub use cert::{AbsUncertainty, RelUncertainty, Uncertainty};
 pub use chebyshev::{ChebyshevBuilder, PolynomialSeries, Series};
 pub use error::PolyCalError;
 pub use problem::{Constraint, Problem, ScoringStrategy};
