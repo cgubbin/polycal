@@ -357,7 +357,7 @@ where
 }
 
 impl<E: Clone + Scalar<Real = E>> Fit<E> {
-    /// Retusn the underlying solution
+    /// Retusn the underlying solution after applying the constraint
     pub(crate) fn solution(&self) -> Series<E> {
         self.constraint.as_ref().map_or_else(
             || self.solution.clone(),
@@ -376,39 +376,17 @@ impl<E: Clone + Scalar<Real = E>> Fit<E> {
 
 impl<E: Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd> Fit<E> {
     pub(crate) fn evaluate_direct(&self, t: E) -> E {
-        dbg!(&self.solution.evaluate(t));
-        self.constraint().map_or_else(
-            || self.solution.evaluate(t),
-            |constraint| {
-                let result = self.solution.evaluate(t) * constraint.multiplicative.evaluate(t)
-                    + constraint.additive.evaluate(t);
-                dbg!(&result);
-                result
-            },
-        )
+        self.solution().evaluate(t)
     }
 
     pub(crate) fn evaluate_direct_derivative(&self, t: E) -> E {
-        self.constraint().map_or_else(
-            || self.solution.derivative(1).evaluate(t),
-            |constraint| {
-                let poly = self.solution.clone() * constraint.multiplicative.clone()
-                    + constraint.additive.clone();
-                poly.derivative(1).evaluate(t)
-            },
-        )
+        self.solution().derivative(1).evaluate(t)
     }
 
     #[allow(clippy::suspicious_operation_groupings)]
     fn q(&self, scaled_root: E) -> E {
         let Range { start, end } = self.stimulus_domain();
-        let series = self.constraint.as_ref().map_or_else(
-            || self.solution.clone(),
-            |constraint| {
-                self.solution.clone() * constraint.multiplicative.clone()
-                    + constraint.additive.clone()
-            },
-        );
+        let series = self.solution();
         (E::one() + E::one()) / (*end - *start) * series.derivative(1).evaluate(scaled_root)
     }
 
@@ -491,15 +469,7 @@ where
 
     fn build(self) -> InverseProblem<E> {
         InverseProblem {
-            problem: self.constraint.map_or_else(
-                || self.problem.clone(),
-                |Constraint {
-                     multiplicative,
-                     additive,
-                 }| {
-                    self.problem.clone() * multiplicative.clone() + additive.clone()
-                },
-            ),
+            problem: self.problem.clone(),
             scaling: self.scaling,
             y0: self.y0,
         }

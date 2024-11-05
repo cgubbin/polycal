@@ -18,6 +18,7 @@
 //!     .collect();
 //!
 //! let problem = ProblemBuilder::new(stimulus.view(), response.view())
+//!     .unwrap()
 //!     .build();
 //! ```
 //!
@@ -719,12 +720,9 @@ mod test {
         let state = 40;
         let mut rng = Isaac64Rng::seed_from_u64(state);
 
-        let order = 1;
-        // let domain_max = rng.gen::<f64>().abs();
-        // let domain_min = -domain_max;
-        // let domain_min = 0.0;
-        let domain_max = 1.0;
-        let domain_min = -1.0;
+        let order = 3;
+        let domain_max = 2.0;
+        let domain_min = -2.0;
         let domain = domain_min..domain_max;
 
         let num_calibration_points = rng.gen_range(20..25);
@@ -737,8 +735,7 @@ mod test {
             })
             .collect::<Array1<_>>();
 
-        let intercept_at_t = 0.05;
-        dbg!(intercept_at_t);
+        let intercept_at_t = 0.25;
 
         let constraint = Constraint {
             additive: ChebyshevBuilder::new(0)
@@ -773,11 +770,13 @@ mod test {
         let series =
             series.unwrap() * constraint.multiplicative.clone() + constraint.additive.clone();
 
+        dbg!(&series);
+
         let y = x.iter().map(|x| series.evaluate(*x)).collect::<Array1<_>>();
 
         let uy = y
             .iter()
-            .map(|y| rng.gen_range(1e-5..1e-3) * y + 1e-7) // stops a failure at the origin
+            .map(|y| rng.gen_range(1e-5..1e-3) * y.abs() + 1e-7) // stops a failure at the origin
             .collect::<Array1<_>>();
 
         let builder = ProblemBuilder::new(x.view(), y.view())

@@ -25,6 +25,7 @@
 //!     .collect();
 //!
 //! let problem = ProblemBuilder::new(stimulus.view(), response.view())
+//!     .unwrap()
 //!     .build();
 //!
 //! let maximum_degree = 5;
@@ -58,7 +59,9 @@
 //!     .collect();
 //!
 //! let problem = ProblemBuilder::new(stimulus.view(), response.view())
+//!     .unwrap()
 //!     .with_independent_variance(independent_uncertainty.view())
+//!     .unwrap()
 //!     .build();
 //! ```
 //! Note that all methods with [`panic`] if the provided stimulus, response and uncertainties

@@ -37,10 +37,8 @@ pub trait ConstrainedPolynomial<E: Scalar<Real = E> + PartialOrd, S: PolynomialS
     /// representing the constant offset from the zero-order term followed by one for each polynomial in the
     /// series of `degree`.
     fn polynomials_with_constraint(&self, t: E, multiplicative_constraint: &S) -> Vec<E> {
-        dbg!(&t);
         let mut polynomials_in_basis = self.polynomials(t);
         let constraint_value = multiplicative_constraint.evaluate(t);
-        dbg!(&constraint_value);
 
         polynomials_in_basis
             .iter_mut()

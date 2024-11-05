@@ -224,32 +224,17 @@ where
 
     fn chi_2(&self, fit: &Series<E>) -> E {
         match self.uncertainties {
-            Covariance::Diagonal { uy, .. } => {
-                self.t
-                    .iter()
-                    .zip(self.y)
-                    .zip(uy)
-                    .fold(E::zero(), |a, ((t, y), uy)| {
-                        a + Scalar::powi(
-                            *y - self.constraint.as_ref().map_or_else(
-                                || fit.evaluate(*t),
-                                |constraint| {
-                                    fit.evaluate(*t) * constraint.multiplicative.evaluate(*t)
-                                },
-                            ),
-                            2,
-                        ) / *uy
-                    })
-            }
+            Covariance::Diagonal { uy, .. } => self
+                .t
+                .iter()
+                .zip(self.y)
+                .zip(uy)
+                .fold(E::zero(), |a, ((t, y), uy)| {
+                    a + Scalar::powi(*y - fit.evaluate(*t), 2) / *uy
+                }),
             // TODO: This does not work when the uncertainties do not exist. Re-read the ISO
             _ => self.t.iter().zip(self.y).fold(E::zero(), |a, (t, y)| {
-                a + Scalar::powi(
-                    *y - self.constraint.as_ref().map_or_else(
-                        || fit.evaluate(*t),
-                        |constraint| fit.evaluate(*t) * constraint.multiplicative.evaluate(*t),
-                    ),
-                    2,
-                )
+                a + Scalar::powi(*y - fit.evaluate(*t), 2)
             }),
         }
     }
@@ -300,11 +285,17 @@ where
             .solve(),
         }?;
 
+        dbg!(&result.coeff().to_vec());
+
         Ok(Fit {
-            solution: ChebyshevBuilder::new(polynomial_degree)
-                .with_coefficients(result.coeff().to_vec())
-                .on_domain(self.domain.clone())
-                .build(),
+            solution: {
+                let solution = ChebyshevBuilder::new(polynomial_degree)
+                    .with_coefficients(result.coeff().to_vec())
+                    .on_domain(self.domain.clone())
+                    .build();
+                dbg!(&solution);
+                solution
+            },
             covariance: result.covariance().to_owned(),
             constraint: self.constraint.clone(),
             response_domain: find_limits(self.y.to_slice().unwrap()), // we build y in the
@@ -333,6 +324,9 @@ where
         polynomial_degree: usize,
     ) -> ::std::result::Result<Array2<E>, ShapeError> {
         let basis = Basis::new(polynomial_degree);
+        // If the problem has a constraint, the basis functions used in the design matrix are the
+        // bare ones for the Chebyshev polynomial multiplied by the multiplicative constraint
+        // function
         let rows = self
             .t
             .iter()
@@ -358,17 +352,6 @@ where
         &self,
         solution: &Series<E>,
     ) -> ::std::result::Result<bool, ChebyshevError> {
-        self.constraint.as_ref().map_or_else(
-            || solution.is_monotonic(),
-            |constraint| {
-                let poly = solution.clone() * constraint.multiplicative.clone();
-                dbg!(&self
-                    .t
-                    .iter()
-                    .map(|each| poly.evaluate(*each))
-                    .collect::<Vec<_>>());
-                poly.is_monotonic()
-            },
-        )
+        solution.is_monotonic()
     }
 }
