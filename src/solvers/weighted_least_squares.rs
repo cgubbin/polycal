@@ -71,9 +71,6 @@ impl<'a, E: Lapack + Scalar<Real = E> + ScalarOperand> WeightedLeastSquares<'a, 
 
         let result = lhs.least_squares(&rhs).map_err(SolverError::LeastSquares)?;
 
-        use ndarray_linalg::Norm;
-        dbg!((&lhs.dot(&result.solution) - &rhs).norm_l2());
-
         let coeff = (&result.solution.t() / &scaling).t().to_owned();
 
         let lhs = self.h.to_owned();

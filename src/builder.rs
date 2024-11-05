@@ -556,6 +556,7 @@ mod test {
     use cert::{AbsUncertainty, Uncertainty};
     use ndarray::Array1;
     use ndarray_rand::rand::{Rng, SeedableRng};
+    use num_traits::Float;
     use rand_isaac::Isaac64Rng;
 
     #[test]
@@ -644,7 +645,6 @@ mod test {
             .collect::<Array1<_>>();
 
         let intercept_at_t = 0.05;
-        dbg!(intercept_at_t);
 
         let constraint = Constraint {
             additive: ChebyshevBuilder::new(0)
@@ -683,11 +683,17 @@ mod test {
         let series =
             series.unwrap() * constraint.multiplicative.clone() + constraint.additive.clone();
 
-        let y = x.iter().map(|x| series.evaluate(*x)).collect::<Array1<_>>();
+        // Series are defined on the unit domain, so we evaluate over this range
+        #[allow(clippy::cast_precision_loss)]
+        let t = (0..num_calibration_points)
+            .map(|m| -1.0 + m as f64 * (2.0) / (num_calibration_points as f64 - 1.0))
+            .collect::<Array1<_>>();
+
+        let y = t.iter().map(|t| series.evaluate(*t)).collect::<Array1<_>>();
 
         let uy = y
             .iter()
-            .map(|y| rng.gen_range(1e-5..1e-3) * y + 1e-7) // stops a failure at the origin
+            .map(|y| rng.gen_range(1e-5..1e-3).mul_add(*y, 1e-7)) // stops a failure at the origin
             .collect::<Array1<_>>();
 
         let builder = ProblemBuilder::new(x.view(), y.view())
@@ -770,13 +776,17 @@ mod test {
         let series =
             series.unwrap() * constraint.multiplicative.clone() + constraint.additive.clone();
 
-        dbg!(&series);
+        // Series are defined on the unit domain, so we evaluate over this range
+        #[allow(clippy::cast_precision_loss)]
+        let t = (0..num_calibration_points)
+            .map(|m| -1.0 + m as f64 * (2.0) / (num_calibration_points as f64 - 1.0))
+            .collect::<Array1<_>>();
 
-        let y = x.iter().map(|x| series.evaluate(*x)).collect::<Array1<_>>();
+        let y = t.iter().map(|t| series.evaluate(*t)).collect::<Array1<_>>();
 
         let uy = y
             .iter()
-            .map(|y| rng.gen_range(1e-5..1e-3) * y.abs() + 1e-7) // stops a failure at the origin
+            .map(|y| rng.gen_range(1e-5..1e-3).mul_add(y.abs(), 1e-7)) // stops a failure at the origin
             .collect::<Array1<_>>();
 
         let builder = ProblemBuilder::new(x.view(), y.view())
@@ -786,13 +796,10 @@ mod test {
             .with_constraint(constraint)
             .with_scoring_strategy(crate::ScoringStrategy::Aicc);
 
-        println!("building problem");
         let problem = builder.build();
 
-        println!("solving problem");
         let solution = problem.solve(4 * order).unwrap();
 
-        println!("solved...");
         let num_tests = 10;
         for _ in 0..num_tests {
             let idx = rng.gen_range(1..(num_calibration_points - 1));
@@ -803,8 +810,100 @@ mod test {
                 .response(AbsUncertainty::new(x0, x0 / 100.0))
                 .unwrap();
 
-            println!("expected: {y0}, predicted: {}", predicted_y.mean());
-            // assert!((y0 - predicted_y.mean()).abs() < predicted_y.standard_deviation());
+            approx::assert_relative_eq!(y0, predicted_y.mean(), epsilon = 1e-8);
+        }
+    }
+
+    #[test]
+    fn fit_with_full_constraints_respects_constraints_for_non_centered_domain() {
+        let state = 40;
+        let mut rng = Isaac64Rng::seed_from_u64(state);
+
+        let order = 1;
+        let domain_max = 2.01;
+        let domain_min = -1.0;
+        let domain = domain_min..domain_max;
+
+        let num_calibration_points = rng.gen_range(20..25);
+
+        #[allow(clippy::cast_precision_loss)]
+        let x = (0..num_calibration_points)
+            .map(|m| {
+                domain_min
+                    + m as f64 * (domain_max - domain_min) / (num_calibration_points as f64 - 1.0)
+            })
+            .collect::<Array1<_>>();
+
+        let intercept_at_t = -0.0;
+
+        let constraint = Constraint {
+            additive: ChebyshevBuilder::new(0)
+                .with_coefficients(vec![intercept_at_t + (domain_min + domain_max) / 2.0])
+                .on_domain(domain.clone())
+                .build(),
+            multiplicative: ChebyshevBuilder::new(1)
+                .with_coefficients(vec![0.0, 1.0 * (domain_max - domain_min) / 2.0])
+                .on_domain(domain.clone())
+                .build(),
+        };
+
+        let mut series = None;
+        // Find an input which is suitable for use as a calibration function.
+        // A calibration function has to be monotonic.
+        loop {
+            let coeff = (0..order).map(|_| rng.gen()).collect::<Vec<f64>>();
+            let this = ChebyshevBuilder::new(order - 1)
+                .with_coefficients(coeff.clone())
+                .on_domain(domain.clone())
+                .build();
+
+            // Check if the *constrained* polynomial is monotonic
+            let constrained =
+                this.clone() * constraint.multiplicative.clone() + constraint.additive.clone();
+
+            if constrained.is_monotonic().unwrap() {
+                let _ = series.replace(this);
+                break;
+            }
+        }
+        let series =
+            series.unwrap() * constraint.multiplicative.clone() + constraint.additive.clone();
+
+        // Series are defined on the unit domain, so we evaluate over this range
+        #[allow(clippy::cast_precision_loss)]
+        let t = (0..num_calibration_points)
+            .map(|m| -1.0 + m as f64 * (2.0) / (num_calibration_points as f64 - 1.0))
+            .collect::<Array1<_>>();
+
+        let y = t.iter().map(|t| series.evaluate(*t)).collect::<Array1<_>>();
+
+        let uy = y
+            .iter()
+            .map(|y| rng.gen_range(1e-5..1e-3).mul_add(y.abs(), 1e-7)) // stops a failure at the origin
+            .collect::<Array1<_>>();
+
+        let builder = ProblemBuilder::new(x.view(), y.view())
+            .unwrap()
+            .with_independent_variance(uy.view())
+            .unwrap()
+            .with_constraint(constraint)
+            .with_scoring_strategy(crate::ScoringStrategy::Aicc);
+
+        let problem = builder.build();
+
+        let solution = problem.solve(4 * order).unwrap();
+
+        let num_tests = 10;
+        for _ in 0..num_tests {
+            let idx = rng.gen_range(1..(num_calibration_points - 1));
+            let x0 = x[idx];
+            let y0 = y[idx];
+
+            let predicted_y = solution
+                .response(AbsUncertainty::new(x0, x0 / 100.0))
+                .unwrap();
+
+            approx::assert_relative_eq!(y0, predicted_y.mean(), epsilon = 1e-8);
         }
     }
 }

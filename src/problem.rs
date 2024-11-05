@@ -149,8 +149,6 @@ where
             .map(|fit| self.score(&fit.solution()))
             .collect::<Vec<_>>();
 
-        dbg!(&scores);
-
         let diffs = scores
             .windows(2)
             .map(|window| window[1] - window[0])
@@ -285,15 +283,12 @@ where
             .solve(),
         }?;
 
-        dbg!(&result.coeff().to_vec());
-
         Ok(Fit {
             solution: {
                 let solution = ChebyshevBuilder::new(polynomial_degree)
                     .with_coefficients(result.coeff().to_vec())
                     .on_domain(self.domain.clone())
                     .build();
-                dbg!(&solution);
                 solution
             },
             covariance: result.covariance().to_owned(),
@@ -331,10 +326,11 @@ where
             .t
             .iter()
             .flat_map(|t| {
-                self.constraint.as_ref().map_or_else(
+                let result = self.constraint.as_ref().map_or_else(
                     || basis.polynomials(*t),
                     |constraint| basis.polynomials_with_constraint(*t, &constraint.multiplicative),
-                )
+                );
+                result
             })
             .collect::<Vec<E>>();
 
