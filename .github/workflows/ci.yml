@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@v2
       - uses: dtolnay/rust-toolchain@stable
       - name: Test (default features)
-        run: cargo test --features statblas --verbose
+        run: cargo test --verbose
 
   clippy:
     runs-on: ubuntu-latest
