@@ -19,7 +19,7 @@ argmin-math = "0.4.0"
 argmin-observer-slog = "0.1.0"
 blas-src = { version = "0.9", features = ["openblas"] }
 openblas-src = { version = "0.10", features = ["cblas", "system"] }
-ndarray = { version = "0.15", features = ["blas"] }
+ndarray = { version = "0.16", features = ["blas"] }
 ndarray-linalg = "0.16.0"
 ndarray-rand = "0.14.0"
 
