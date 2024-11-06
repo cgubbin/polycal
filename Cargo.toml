@@ -1,10 +1,11 @@
 [package]
 name = "polycal"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 license = "MIT"
 authors = ["Christopher Gubbin <chris.gubbin@gmail.com>"]
 description = "methods for fitting and using polynomial calibration functions following ISO/TS 28038"
+repository = "https://github.com/sensoriumtl/polycal"
 
 
 [dependencies]
