@@ -143,9 +143,9 @@ dependencies = [
 
 [[package]]
 name = "cert"
-version = "0.1.0"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1896f2e4c2c6b239a032e3e1b209a8f2bc189e0855b56906e5f6829d7f9f20c3"
+checksum = "8e1cd66e28cf7270c5f2ef91745867b5690809823905e39c03541a7ac68f8ef9"
 dependencies = [
  "num-traits",
 ]
@@ -646,7 +646,7 @@ checksum = "d231b230927b5e4ad203db57bbcbee2802f6bce620b1e4a9024a07d94e2907ec"
 
 [[package]]
 name = "polycal"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "approx 0.5.1",
  "argmin",
