@@ -53,14 +53,14 @@
 //!     .iter()
 //!     .map(|x| a + b * x)
 //!     .collect();
-//! let independent_uncertainty: Array1<f64> = response
+//! let dependent_uncertainty: Array1<f64> = response
 //!     .iter()
 //!     .map(|x| x / 1000.0)
 //!     .collect();
 //!
 //! let problem = ProblemBuilder::new(stimulus.view(), response.view())
 //!     .unwrap()
-//!     .with_independent_variance(independent_uncertainty.view())
+//!     .with_dependent_variance(dependent_uncertainty.view())
 //!     .unwrap()
 //!     .build();
 //! ```
@@ -84,14 +84,14 @@
 //!     .iter()
 //!     .map(|x| a + b * x)
 //!     .collect();
-//! let independent_uncertainty: Array1<f64> = response
+//! let dependent_uncertainty: Array1<f64> = response
 //!     .iter()
 //!     .map(|x| x / 1000.0)
 //!     .collect();
 //!
 //! let problem = ProblemBuilder::new(stimulus.view(), response.view())
 //!     .unwrap()
-//!     .with_independent_variance(independent_uncertainty.view())
+//!     .with_dependent_variance(dependent_uncertainty.view())
 //!     .unwrap()
 //!     .build();
 //!
@@ -117,14 +117,14 @@
 //!     .iter()
 //!     .map(|x| a + b * x)
 //!     .collect();
-//! let independent_uncertainty: Array1<f64> = response
+//! let dependent_uncertainty: Array1<f64> = response
 //!     .iter()
 //!     .map(|x| x / 1000.0)
 //!     .collect();
 //!
 //! let problem = ProblemBuilder::new(stimulus.view(), response.view())
 //!     .unwrap()
-//!     .with_independent_variance(independent_uncertainty.view())
+//!     .with_dependent_variance(dependent_uncertainty.view())
 //!     .unwrap()
 //!     .build();
 //!

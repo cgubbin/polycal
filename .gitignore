@@ -1,4 +1,4 @@
 /.direnv
-/target
-/.cargo
+/polycal/target
+/polycal/.cargo
 

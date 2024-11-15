@@ -132,7 +132,7 @@ impl<'a, E: Float, C> ProblemBuilder<'a, E, Unset, Unset, Unset, Unset, C> {
     /// - If the provided values contain any NaN, infinite, or zero values. Note that zeros are not
     ///     allowed, because the weighted least squares process relies on the inverse of the
     ///     variance
-    fn with_dependent_variance(
+    pub fn with_dependent_variance(
         self,
         dependent_variance: impl Into<ArrayView1<'a, E>>,
     ) -> Result<ProblemBuilder<'a, E, Set, Unset, Unset, Unset, C>, PolyCalError<E>> {
@@ -167,7 +167,7 @@ impl<'a, E: Float, C> ProblemBuilder<'a, E, Unset, Set, Unset, Unset, C> {
     /// - If the provided values contain any NaN, infinite, or zero values. Note that zeros are not
     ///     allowed, because the weighted least squares process relies on the inverse of the
     ///     variance
-    fn with_dependent_variance(
+    pub fn with_dependent_variance(
         self,
         dependent_variance: impl Into<ArrayView1<'a, E>>,
     ) -> Result<ProblemBuilder<'a, E, Set, Set, Unset, Unset, C>, PolyCalError<E>> {
@@ -202,7 +202,7 @@ impl<'a, E: Float, C> ProblemBuilder<'a, E, Unset, Unset, Unset, Unset, C> {
     /// - If the provided values contain any NaN, infinite, or zero values. Note that zeros are not
     ///     allowed, because the weighted least squares process relies on the inverse of the
     ///     variance
-    pub fn with_independent_variance(
+    fn with_independent_variance(
         self,
         independent_variance: impl Into<ArrayView1<'a, E>>,
     ) -> Result<ProblemBuilder<'a, E, Unset, Set, Unset, Unset, C>, PolyCalError<E>> {
@@ -237,7 +237,7 @@ impl<'a, E: Float, C> ProblemBuilder<'a, E, Set, Unset, Unset, Unset, C> {
     /// - If the provided values contain any NaN, infinite, or zero values. Note that zeros are not
     ///     allowed, because the weighted least squares process relies on the inverse of the
     ///     variance
-    pub fn with_independent_variance(
+    fn with_independent_variance(
         self,
         independent_variance: impl Into<ArrayView1<'a, E>>,
     ) -> Result<ProblemBuilder<'a, E, Set, Set, Unset, Unset, C>, PolyCalError<E>> {
@@ -265,7 +265,7 @@ impl<'a, E: Float, C> ProblemBuilder<'a, E, Set, Unset, Unset, Unset, C> {
 }
 
 impl<'a, E, C> ProblemBuilder<'a, E, Unset, Unset, Unset, Unset, C> {
-    fn with_dependent_covariance(
+    pub(crate) fn with_dependent_covariance(
         self,
         dependent_covariance: impl Into<ArrayView2<'a, E>>,
     ) -> ProblemBuilder<'a, E, Unset, Unset, Set, Unset, C> {
@@ -284,7 +284,7 @@ impl<'a, E, C> ProblemBuilder<'a, E, Unset, Unset, Unset, Unset, C> {
 }
 
 impl<'a, E, C> ProblemBuilder<'a, E, Unset, Unset, Unset, Set, C> {
-    fn with_dependent_covariance(
+    pub(crate) fn with_dependent_covariance(
         self,
         dependent_covariance: impl Into<ArrayView2<'a, E>>,
     ) -> ProblemBuilder<'a, E, Unset, Unset, Set, Set, C> {
@@ -303,7 +303,7 @@ impl<'a, E, C> ProblemBuilder<'a, E, Unset, Unset, Unset, Set, C> {
 }
 
 impl<'a, E, C> ProblemBuilder<'a, E, Unset, Unset, Unset, Unset, C> {
-    pub(crate) fn with_independent_covariance(
+    fn with_independent_covariance(
         self,
         independent_covariance: impl Into<ArrayView2<'a, E>>,
     ) -> ProblemBuilder<'a, E, Unset, Unset, Unset, Set, C> {
@@ -374,7 +374,7 @@ impl<'a, E: PartialOrd + Scalar> ProblemBuilder<'a, E, Unset, Unset, Unset, Unse
     }
 }
 
-impl<'a, E: PartialOrd + Scalar> ProblemBuilder<'a, E, Unset, Set, Unset, Unset, Unset> {
+impl<'a, E: PartialOrd + Scalar> ProblemBuilder<'a, E, Set, Unset, Unset, Unset, Unset> {
     #[must_use]
     /// Build a problem
     ///
@@ -388,8 +388,8 @@ impl<'a, E: PartialOrd + Scalar> ProblemBuilder<'a, E, Unset, Set, Unset, Unset,
             y: self.dependent,
             uncertainties: Covariance::Diagonal {
                 ux: None,
-                uy: self.independent_variance.unwrap(), // This is safe as the typestate ensure
-                                                        // it is some
+                uy: self.dependent_variance.unwrap(), // This is safe as the typestate ensure
+                                                      // it is some
             },
             domain,
             strategy: self.strategy,
@@ -449,6 +449,23 @@ impl<'a, E: PartialOrd + Scalar> ProblemBuilder<'a, E, Unset, Unset, Set, Set, U
     }
 }
 
+impl<'a, E: PartialOrd + Scalar> ProblemBuilder<'a, E, Unset, Unset, Set, Unset, Unset> {
+    pub(crate) fn build(self) -> Problem<'a, E> {
+        let Rescaled { t, domain } = form_rescaled_variables(self.independent);
+        Problem {
+            t,
+            y: self.dependent,
+            uncertainties: Covariance::Matrix {
+                vx: None,
+                vy: self.dependent_covariance.unwrap(),
+            },
+            domain,
+            strategy: self.strategy,
+            constraint: None,
+        }
+    }
+}
+
 impl<'a, E: PartialOrd + Scalar, C: Into<Constraint<E>>>
     ProblemBuilder<'a, E, Unset, Unset, Unset, Unset, C>
 {
@@ -487,6 +504,29 @@ impl<'a, E: PartialOrd + Scalar, C: Into<Constraint<E>>>
             domain,
             strategy: self.strategy,
             constraint: self.constraint.map(std::convert::Into::into),
+        }
+    }
+}
+
+impl<'a, E: PartialOrd + Scalar> ProblemBuilder<'a, E, Unset, Set, Unset, Unset, Unset> {
+    #[must_use]
+    /// Build a problem
+    ///
+    /// # Panics
+    /// The function should not panic, the typestate prevents an invalid state, ensuring the `unwrap` is Ok
+    pub fn build(self) -> Problem<'a, E> {
+        let Rescaled { t, domain } = form_rescaled_variables(self.independent);
+
+        Problem {
+            t,
+            y: self.dependent,
+            uncertainties: Covariance::Diagonal {
+                ux: None,
+                uy: self.independent_variance.unwrap(),
+            },
+            domain,
+            strategy: self.strategy,
+            constraint: None,
         }
     }
 }
@@ -560,7 +600,7 @@ mod test {
     use rand_isaac::Isaac64Rng;
 
     #[test]
-    fn fit_with_independent_variance_works_in_direct_evaluation() {
+    fn fit_with_dependent_variance_works_in_direct_evaluation() {
         let state = 40;
         let mut rng = Isaac64Rng::seed_from_u64(state);
 

@@ -32,12 +32,16 @@
 
         craneLib = (crane.mkLib pkgs).overrideToolchain
                     fenix-pkgs.latest.toolchain;
-        src = craneLib.cleanCargoSource ./.;
+
+        src = craneLib.cleanCargoSource ./polycal;
 
         # Common arguments can be set here to avoid repeating them later
         commonArgs = {
-          inherit src;
+        inherit src;
           strictDeps = true;
+
+          cargoToml = ./polycal/Cargo.toml;
+          cargoLock = ./polycal/Cargo.lock;
 
           buildInputs = with pkgs; [
             gfortran
@@ -61,6 +65,7 @@
             "cargo"
             "llvm-tools"
             "rustc"
+            "rust-analyzer"
           ]);
 
         # Build *just* the cargo dependencies, so we can reuse
@@ -71,6 +76,10 @@
         # artifacts from above.
         polycal = craneLib.buildPackage (commonArgs // {
           inherit cargoArtifacts;
+          postUnpack = ''
+             cd $sourceRoot/polycal
+             sourceRoot="."
+           '';
         });
       in
       {
@@ -144,7 +153,7 @@
           # Extra inputs can be added here; cargo and rustc are provided by default.
           packages = [
             # pkgs.codelldb
-            fenix-pkgs.rust-analyzer
+            # fenix-pkgs.rust-analyzer
           ];
         };
       });

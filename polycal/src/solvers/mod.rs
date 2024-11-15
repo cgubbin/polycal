@@ -19,9 +19,9 @@ pub enum SolverError {
 }
 
 pub struct Solution<E> {
-    coeff: Array1<E>,
-    dependent_central_values: Option<Array1<E>>,
-    covariance: Array2<E>,
+    pub(crate) coeff: Array1<E>,
+    pub(crate) dependent_central_values: Option<Array1<E>>,
+    pub(crate) covariance: Array2<E>,
 }
 
 impl<E> Solution<E> {
