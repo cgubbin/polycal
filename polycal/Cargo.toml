@@ -15,7 +15,7 @@ path = "src/lib.rs" # The source file of the target.
 [dependencies]
 cert = "0.1"
 num-traits = "0.2"
-tracing = "0.1.40"
+tracing = "0.1.41"
 rand_isaac = "0.3.0"
 thiserror = "1.0.67"
 time = "0.3.36"
