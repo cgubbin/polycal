@@ -12,7 +12,7 @@ use crate::chebyshev::{
 use crate::solvers::{
     SolveSystem, SolverError, TotalLeastSquares, Uncertainty, WeightedLeastSquares,
 };
-use crate::utils::find_limits;
+use crate::utils::{find_limits, to_scaled};
 use crate::PolyCalError;
 
 /// Different scoring strategies for fit procedure
@@ -56,13 +56,21 @@ pub struct Constraint<E> {
 impl<E: FloatCore + PartialOrd + Clone + Scalar<Real = E>> Constraint<E> {
     /// Create a new constraint which enforces that the fit polynomial passes through the origin
     pub fn passing_through_origin(domain: Range<E>) -> Self {
+        // The origin to pass through is in the `domain`, not in the rescaled variable the
+        // polynomials are functions of. We can find the value of the transformed variable
+        // corresponding to this origin by back-transforming
+        let origin_in_scaled = to_scaled(E::zero(), &domain);
+
+        println!("origin_in_scaled {origin_in_scaled:?}");
+
         Self {
             additive: ChebyshevBuilder::new(0)
                 .with_coefficients(vec![E::zero()])
                 .on_domain(domain.clone())
                 .build(),
             multiplicative: ChebyshevBuilder::new(1)
-                .with_coefficients(vec![E::zero(), E::one()])
+                // .with_coefficients(vec![E::zero(), E::one()])
+                .with_coefficients(vec![-origin_in_scaled, E::one()])
                 .on_domain(domain)
                 .build(),
         }
@@ -107,7 +115,7 @@ where
     ///
     #[tracing::instrument(skip(self))]
     pub fn solve(&self, n_max: usize) -> ::std::result::Result<Fit<E>, PolyCalError<E>> {
-        let fits = (1..n_max)
+        let fits = (0..n_max)
             .filter_map(|polynomial_degree| match self.fit(polynomial_degree) {
                 Ok(fit) => match self.check_is_monotonic(&fit.solution()) {
                     Ok(true) => Some(fit),
@@ -130,12 +138,21 @@ where
             })
             .collect::<Vec<_>>();
 
+        // If we failed to fit return an error containing the values we tried to fit to
+        if fits.is_empty() {
+            return Err(PolyCalError::FittingFailure {
+                dependent: self.t.to_vec(),
+                independent: self.y.to_vec(),
+            });
+        }
+
         event!(
             Level::INFO,
             num_successes = fits.len(),
             num_failures = n_max - fits.len(),
             "finding best fit"
         );
+
         let (_best_score, best_fit) = self.find_best_fit(fits);
 
         // TODO: Chi-2 validation at nu = m - n - 1

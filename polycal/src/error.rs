@@ -34,4 +34,9 @@ pub enum PolyCalError<E> {
     /// Error in low-level Chebyshev calculation
     #[error("error in chebyshev calculation")]
     Chebyshev(ChebyshevError),
+    #[error("a successful fit was not possible for the given data")]
+    FittingFailure {
+        dependent: Vec<E>,
+        independent: Vec<E>,
+    },
 }

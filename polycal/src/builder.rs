@@ -405,42 +405,8 @@ impl<'a, E: PartialOrd + Scalar> ProblemBuilder<'a, E, Set, Set, Unset, Unset, U
             t,
             y: self.dependent,
             uncertainties: Covariance::Diagonal {
-                ux: Some(self.dependent_variance.unwrap()),
-                uy: self.independent_variance.unwrap(),
-            },
-            domain,
-            strategy: self.strategy,
-            constraint: None,
-        }
-    }
-}
-
-impl<'a, E: PartialOrd + Scalar> ProblemBuilder<'a, E, Unset, Unset, Unset, Set, Unset> {
-    pub(crate) fn build(self) -> Problem<'a, E> {
-        let Rescaled { t, domain } = form_rescaled_variables(self.independent);
-        Problem {
-            t,
-            y: self.dependent,
-            uncertainties: Covariance::Matrix {
-                vx: None,
-                vy: self.independent_covariance.unwrap(),
-            },
-            domain,
-            strategy: self.strategy,
-            constraint: None,
-        }
-    }
-}
-
-impl<'a, E: PartialOrd + Scalar> ProblemBuilder<'a, E, Unset, Unset, Set, Set, Unset> {
-    fn build(self) -> Problem<'a, E> {
-        let Rescaled { t, domain } = form_rescaled_variables(self.independent);
-        Problem {
-            t,
-            y: self.dependent,
-            uncertainties: Covariance::Matrix {
-                vx: Some(self.dependent_covariance.unwrap()),
-                vy: self.independent_covariance.unwrap(),
+                ux: Some(self.independent_variance.unwrap()),
+                uy: self.dependent_variance.unwrap(),
             },
             domain,
             strategy: self.strategy,
@@ -457,6 +423,23 @@ impl<'a, E: PartialOrd + Scalar> ProblemBuilder<'a, E, Unset, Unset, Set, Unset,
             y: self.dependent,
             uncertainties: Covariance::Matrix {
                 vx: None,
+                vy: self.dependent_covariance.unwrap(),
+            },
+            domain,
+            strategy: self.strategy,
+            constraint: None,
+        }
+    }
+}
+
+impl<'a, E: PartialOrd + Scalar> ProblemBuilder<'a, E, Unset, Unset, Set, Set, Unset> {
+    fn build(self) -> Problem<'a, E> {
+        let Rescaled { t, domain } = form_rescaled_variables(self.independent);
+        Problem {
+            t,
+            y: self.dependent,
+            uncertainties: Covariance::Matrix {
+                vx: Some(self.independent_covariance.unwrap()),
                 vy: self.dependent_covariance.unwrap(),
             },
             domain,
@@ -484,7 +467,7 @@ impl<'a, E: PartialOrd + Scalar, C: Into<Constraint<E>>>
 }
 
 impl<'a, E: PartialOrd + Scalar, C: Into<Constraint<E>>>
-    ProblemBuilder<'a, E, Unset, Set, Unset, Unset, C>
+    ProblemBuilder<'a, E, Set, Unset, Unset, Unset, C>
 {
     #[must_use]
     /// Build a problem
@@ -493,40 +476,16 @@ impl<'a, E: PartialOrd + Scalar, C: Into<Constraint<E>>>
     /// The function should not panic, the typestate prevents an invalid state, ensuring the `unwrap` is Ok
     pub fn build(self) -> Problem<'a, E> {
         let Rescaled { t, domain } = form_rescaled_variables(self.independent);
-
         Problem {
             t,
             y: self.dependent,
             uncertainties: Covariance::Diagonal {
                 ux: None,
-                uy: self.independent_variance.unwrap(),
+                uy: self.dependent_variance.unwrap(),
             },
             domain,
             strategy: self.strategy,
             constraint: self.constraint.map(std::convert::Into::into),
-        }
-    }
-}
-
-impl<'a, E: PartialOrd + Scalar> ProblemBuilder<'a, E, Unset, Set, Unset, Unset, Unset> {
-    #[must_use]
-    /// Build a problem
-    ///
-    /// # Panics
-    /// The function should not panic, the typestate prevents an invalid state, ensuring the `unwrap` is Ok
-    pub fn build(self) -> Problem<'a, E> {
-        let Rescaled { t, domain } = form_rescaled_variables(self.independent);
-
-        Problem {
-            t,
-            y: self.dependent,
-            uncertainties: Covariance::Diagonal {
-                ux: None,
-                uy: self.independent_variance.unwrap(),
-            },
-            domain,
-            strategy: self.strategy,
-            constraint: None,
         }
     }
 }
@@ -540,8 +499,8 @@ impl<'a, E: PartialOrd + Scalar, C: Into<Constraint<E>>>
             t,
             y: self.dependent,
             uncertainties: Covariance::Diagonal {
-                ux: Some(self.dependent_variance.unwrap()),
-                uy: self.independent_variance.unwrap(),
+                ux: Some(self.independent_variance.unwrap()),
+                uy: self.dependent_variance.unwrap(),
             },
             domain,
             strategy: self.strategy,
@@ -551,7 +510,7 @@ impl<'a, E: PartialOrd + Scalar, C: Into<Constraint<E>>>
 }
 //
 impl<'a, E: PartialOrd + Scalar, C: Into<Constraint<E>>>
-    ProblemBuilder<'a, E, Unset, Unset, Unset, Set, C>
+    ProblemBuilder<'a, E, Unset, Unset, Set, Unset, C>
 {
     fn build(self) -> Problem<'a, E> {
         let Rescaled { t, domain } = form_rescaled_variables(self.independent);
@@ -560,7 +519,7 @@ impl<'a, E: PartialOrd + Scalar, C: Into<Constraint<E>>>
             y: self.dependent,
             uncertainties: Covariance::Matrix {
                 vx: None,
-                vy: self.independent_covariance.unwrap(),
+                vy: self.dependent_covariance.unwrap(),
             },
             domain,
             strategy: self.strategy,
@@ -578,8 +537,8 @@ impl<'a, E: PartialOrd + Scalar, C: Into<Constraint<E>>>
             t,
             y: self.dependent,
             uncertainties: Covariance::Matrix {
-                vx: Some(self.dependent_covariance.unwrap()),
-                vy: self.independent_covariance.unwrap(),
+                vx: Some(self.independent_covariance.unwrap()),
+                vy: self.dependent_covariance.unwrap(),
             },
             domain,
             strategy: self.strategy,
@@ -642,7 +601,7 @@ mod test {
 
         let builder = ProblemBuilder::new(x.view(), y.view())
             .unwrap()
-            .with_independent_variance(uy.view())
+            .with_dependent_variance(uy.view())
             .unwrap()
             .with_scoring_strategy(crate::ScoringStrategy::Aicc);
 
@@ -738,7 +697,7 @@ mod test {
 
         let builder = ProblemBuilder::new(x.view(), y.view())
             .unwrap()
-            .with_independent_variance(uy.view())
+            .with_dependent_variance(uy.view())
             .unwrap()
             .with_constraint(constraint)
             .with_scoring_strategy(crate::ScoringStrategy::Aicc);
@@ -831,7 +790,7 @@ mod test {
 
         let builder = ProblemBuilder::new(x.view(), y.view())
             .unwrap()
-            .with_independent_variance(uy.view())
+            .with_dependent_variance(uy.view())
             .unwrap()
             .with_constraint(constraint)
             .with_scoring_strategy(crate::ScoringStrategy::Aicc);
@@ -924,7 +883,7 @@ mod test {
 
         let builder = ProblemBuilder::new(x.view(), y.view())
             .unwrap()
-            .with_independent_variance(uy.view())
+            .with_dependent_variance(uy.view())
             .unwrap()
             .with_constraint(constraint)
             .with_scoring_strategy(crate::ScoringStrategy::Aicc);
