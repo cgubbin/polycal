@@ -380,7 +380,24 @@ impl<E: Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd> Fit<
     }
 
     pub(crate) fn evaluate_direct_derivative(&self, t: E) -> E {
+        // The derivative is d f / d x.
+        //
+        // The argument `t` has been scaled, so we evaluate at the correct point but if we just
+        // return `solution.derivative(1)` then the numerator will be incorrect. We will be
+        // returning df / dt.
+        //
+        // Application of the chain rule lets us transform by multilpying through by dt / dx.
+        //
+        // The scaled `t` relates to the input variable `x` through [`to_scaled`], as
+        // t = (x + x - *end - *start) / (*end - *start)
+        // so
+        // [dt / dx] = 2.0 / (end - start)
+
+        // This is df / dt
         self.solution().derivative(1).evaluate(t)
+            // Multiplying through by dt / dx
+            / (self.solution().domain().end - self.solution().domain().start)
+            * (E::one() + E::one())
     }
 
     #[allow(clippy::suspicious_operation_groupings)]
