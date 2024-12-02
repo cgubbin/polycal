@@ -230,8 +230,16 @@ impl<
             //
             //     return Ok(AbsUncertainty::new(estimate, standard_uncertainty));
             // }
-            return Err(PolyCalError::OutOfRange {
+            return Err(PolyCalError::OutOfRangeUncertain {
                 value: stimulus.mean(),
+                evaluated: {
+                    let t = to_scaled(stimulus.mean(), self.stimulus_domain());
+                    let estimate = self.evaluate_direct(t);
+                    let standard_uncertainty =
+                        self.evaluate_direct_uncertainty(t, stimulus.standard_deviation());
+
+                    AbsUncertainty::new(estimate, standard_uncertainty)
+                },
                 range: self.solution().domain(),
                 kind: Kind::Stimulus,
             });
@@ -262,8 +270,13 @@ impl<
     #[tracing::instrument(skip(self))]
     pub fn certain_response(&self, stimulus: E) -> PolyCalResult<E, E> {
         if !self.solution().domain().contains(&stimulus) {
-            return Err(PolyCalError::OutOfRange {
+            return Err(PolyCalError::OutOfRangeCertain {
                 value: stimulus,
+                evaluated: {
+                    let t = to_scaled(stimulus, self.stimulus_domain());
+                    self.evaluate_direct(t)
+                },
+
                 range: self.solution().domain(),
                 kind: Kind::Stimulus,
             });
@@ -288,8 +301,12 @@ impl<
     #[tracing::instrument(skip(self))]
     pub fn certain_response_derivative(&self, stimulus: E) -> PolyCalResult<E, E> {
         if !self.solution().domain().contains(&stimulus) {
-            return Err(PolyCalError::OutOfRange {
+            return Err(PolyCalError::OutOfRangeCertain {
                 value: stimulus,
+                evaluated: {
+                    let t = to_scaled(stimulus, self.stimulus_domain());
+                    self.evaluate_direct_derivative(t)
+                },
                 range: self.solution().domain(),
                 kind: Kind::Stimulus,
             });
@@ -337,8 +354,21 @@ where
         max_iter: Option<usize>,
     ) -> PolyCalResult<AbsUncertainty<E>, E> {
         if !self.response_domain.contains(&response.mean()) {
-            return Err(PolyCalError::OutOfRange {
+            return Err(PolyCalError::OutOfRangeUncertain {
                 value: response.mean(),
+                evaluated: {
+                    let scaled_estimate =
+                        self.evaluate_inverse(response.mean(), guess, max_iter)?;
+
+                    // event!(Level::INFO, "evaluating uncertainty"); # reinstate when testing is complete
+                    let variance = self
+                        .evaluate_inverse_variance(scaled_estimate, response.standard_deviation());
+
+                    // Scale back to the true data type
+                    let estimate =
+                        crate::utils::to_unscaled(scaled_estimate, self.stimulus_domain());
+                    AbsUncertainty::new(estimate, variance.total_uncertainty())
+                },
                 range: self.response_domain.clone(),
                 kind: Kind::Response,
             });

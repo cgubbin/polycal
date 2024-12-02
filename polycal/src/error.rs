@@ -1,5 +1,6 @@
 use crate::chebyshev::ChebyshevError;
 use crate::solvers::SolverError;
+use cert::AbsUncertainty;
 use std::ops::Range;
 
 #[derive(Debug)]
@@ -14,8 +15,16 @@ pub enum PolyCalError<E> {
     /// The input value was outside of the calibration range, so a prediction cannot be reliably
     /// made.
     #[error("input {kind:?} ({value}) is out of {kind:?} calibration working range: {range:?}")]
-    OutOfRange {
+    OutOfRangeCertain {
         value: E,
+        evaluated: E,
+        range: Range<E>,
+        kind: Kind,
+    },
+    #[error("input {kind:?} ({value}) is out of {kind:?} calibration working range: {range:?}")]
+    OutOfRangeUncertain {
+        value: E,
+        evaluated: AbsUncertainty<E>,
         range: Range<E>,
         kind: Kind,
     },
