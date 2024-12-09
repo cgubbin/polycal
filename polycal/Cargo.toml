@@ -17,7 +17,7 @@ cert = "0.1"
 num-traits = "0.2"
 tracing = "0.1.40"
 rand_isaac = "0.3.0"
-thiserror = "1.0.67"
+thiserror = "2.0.6"
 time = "0.3.36"
 argmin = { version = "0.10", features = ["_ndarrayl"] }
 argmin-math = "0.4.0"
