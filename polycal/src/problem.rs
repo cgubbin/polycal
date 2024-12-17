@@ -61,8 +61,6 @@ impl<E: FloatCore + PartialOrd + Clone + Scalar<Real = E>> Constraint<E> {
         // corresponding to this origin by back-transforming
         let origin_in_scaled = to_scaled(E::zero(), &domain);
 
-        println!("origin_in_scaled {origin_in_scaled:?}");
-
         Self {
             additive: ChebyshevBuilder::new(0)
                 .with_coefficients(vec![E::zero()])
@@ -120,18 +118,15 @@ where
                 Ok(fit) => match self.check_is_monotonic(&fit.solution()) {
                     Ok(true) => Some(fit),
                     Ok(false) => {
-                        println!("non-monotonic");
                         tracing::error!("found non-monotonic solution");
                         None
                     }
                     Err(err) => {
-                        println!("err {err:?}");
                         tracing::error!("{err:?}");
                         None
                     }
                 },
                 Err(err) => {
-                    println!("err {err:?}");
                     tracing::error!("{err:?}");
                     None
                 }
