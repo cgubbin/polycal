@@ -10,7 +10,7 @@ use crate::chebyshev::{
     Series,
 };
 use crate::solvers::{
-    SolveSystem, SolverError, TotalLeastSquares, Uncertainty, WeightedLeastSquares,
+    Covariance as CovarianceRef, SolveSystem, SolverError, TotalLeastSquares, WeightedLeastSquares,
 };
 use crate::utils::{find_limits, to_scaled};
 use crate::PolyCalError;
@@ -263,33 +263,33 @@ where
         let result = match self.uncertainties {
             Covariance::None => WeightedLeastSquares {
                 y,
-                uncertainty: Uncertainty::None,
+                covariance: CovarianceRef::None,
                 h: design_matrix,
             }
             .solve(),
             Covariance::Diagonal { ux, uy } if ux.is_none() => WeightedLeastSquares {
                 y,
-                uncertainty: Uncertainty::Diagonal(uy),
+                covariance: CovarianceRef::Diagonal(uy),
                 h: design_matrix,
             }
             .solve(),
             Covariance::Matrix { vx, vy } if vx.is_none() => WeightedLeastSquares {
                 y,
-                uncertainty: Uncertainty::Full(vy),
+                covariance: CovarianceRef::Matrix(vy),
                 h: design_matrix,
             }
             .solve(),
             Covariance::Diagonal { ux, uy } => TotalLeastSquares {
                 y,
-                uncertainty_x: Uncertainty::Diagonal(ux.unwrap()),
-                uncertainty_y: Uncertainty::Diagonal(uy),
+                covariance_x: CovarianceRef::Diagonal(ux.unwrap()),
+                covariance_y: CovarianceRef::Diagonal(uy),
                 h: design_matrix,
             }
             .solve(),
             Covariance::Matrix { vx, vy } => TotalLeastSquares {
                 y,
-                uncertainty_x: Uncertainty::Full(vx.unwrap()),
-                uncertainty_y: Uncertainty::Full(vy),
+                covariance_x: CovarianceRef::Matrix(vx.unwrap()),
+                covariance_y: CovarianceRef::Matrix(vy),
                 h: design_matrix,
             }
             .solve(),

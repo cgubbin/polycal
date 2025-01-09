@@ -39,8 +39,8 @@ pub trait SolveSystem<E> {
 }
 
 #[derive(Clone)]
-pub enum Uncertainty<'a, E> {
+pub enum Covariance<'a, E> {
     None,
     Diagonal(ArrayView1<'a, E>),
-    Full(ArrayView2<'a, E>),
+    Matrix(ArrayView2<'a, E>),
 }

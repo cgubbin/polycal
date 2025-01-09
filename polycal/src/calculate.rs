@@ -437,7 +437,6 @@ impl<E: Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd> Fit<
         (E::one() + E::one()) / (*end - *start) * series.derivative(1).evaluate(scaled_root)
     }
 
-    // Returns an uncertainty, not a variance
     pub(crate) fn evaluate_direct_uncertainty(&self, scaled_root: E, uncertainty_x: E) -> E {
         let g: Array1<E> = self.constraint.as_ref().map_or_else(
             || self.solution.basis.polynomials(scaled_root).into(),
@@ -450,6 +449,9 @@ impl<E: Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd> Fit<
                     .collect()
             },
         );
+
+        // dbg!(&g, &self.covariance);
+        // panic!();
 
         (Scalar::powi(self.q(scaled_root), 2) * Scalar::powi(uncertainty_x, 2)
             + g.dot(&self.covariance.dot(&g)))

@@ -1,21 +1,21 @@
 use super::SolverError;
-use super::{Solution, SolveSystem, Uncertainty};
+use super::{Covariance, Solution, SolveSystem};
 use crate::utils::outer_product;
 use ndarray::{s, Array1, Array2, ArrayView1, ArrayView2, Axis, ScalarOperand};
 use ndarray_linalg::{Cholesky, Inverse, Lapack, LeastSquaresSvd, Scalar, UPLO};
 
 pub struct WeightedLeastSquares<'a, E> {
     pub(crate) y: Array1<E>,
-    pub(crate) uncertainty: Uncertainty<'a, E>,
+    pub(crate) covariance: Covariance<'a, E>,
     pub(crate) h: Array2<E>,
 }
 
 impl<E: Lapack + Scalar<Real = E> + ScalarOperand> SolveSystem<E> for WeightedLeastSquares<'_, E> {
     fn solve(&self) -> ::std::result::Result<Solution<E>, SolverError> {
-        match self.uncertainty {
-            Uncertainty::None => self.solve_unweighted(),
-            Uncertainty::Diagonal(uy) => self.solve_weighted(uy),
-            Uncertainty::Full(vy) => self.solve_full(vy),
+        match self.covariance {
+            Covariance::None => self.solve_unweighted(),
+            Covariance::Diagonal(uy) => self.solve_weighted(uy),
+            Covariance::Matrix(vy) => self.solve_full(vy),
         }
     }
 }
@@ -50,16 +50,16 @@ impl<'a, E: Lapack + Scalar<Real = E> + ScalarOperand> WeightedLeastSquares<'a, 
     #[tracing::instrument(skip_all)]
     fn solve_weighted(
         &self,
-        uy: ArrayView1<'a, E>,
+        dependent_variance: ArrayView1<'a, E>,
     ) -> ::std::result::Result<Solution<E>, SolverError> {
         let mut lhs = self.h.to_owned();
-        let uy = uy.to_owned();
+        // let vy = dependent_variance.to_owned();
 
-        let rhs = self.y.to_owned() / uy.mapv(|x| x.powi(2));
+        let rhs = self.y.to_owned() / dependent_variance;
 
-        for (ii, uy) in uy.iter().enumerate() {
+        for (ii, each_variance) in dependent_variance.iter().enumerate() {
             let mut slice = lhs.slice_mut(s![ii, ..]);
-            slice /= uy.powi(2);
+            slice /= *each_variance;
         }
 
         let scaling = lhs
@@ -74,7 +74,7 @@ impl<'a, E: Lapack + Scalar<Real = E> + ScalarOperand> WeightedLeastSquares<'a, 
         let coeff = (&result.solution.t() / &scaling).t().to_owned();
 
         let lhs = self.h.to_owned();
-        let w = Array2::from_diag(&uy.to_owned().mapv(|uy| E::one() / uy.powi(2)));
+        let w = Array2::from_diag(&dependent_variance.to_owned().mapv(|each| E::one() / each));
         let covariance = (lhs.t().dot(&w.dot(&lhs)))
             .inv()
             .map_err(SolverError::Inverse)?;
@@ -87,11 +87,15 @@ impl<'a, E: Lapack + Scalar<Real = E> + ScalarOperand> WeightedLeastSquares<'a, 
     }
 
     #[tracing::instrument(skip_all)]
-    fn solve_full(&self, vy: ArrayView2<'a, E>) -> ::std::result::Result<Solution<E>, SolverError> {
+    fn solve_full(
+        &self,
+        dependent_covariance: ArrayView2<'a, E>,
+    ) -> ::std::result::Result<Solution<E>, SolverError> {
         let _lhs = self.h.to_owned();
-        let vy = vy.to_owned();
 
-        let _lower = vy.cholesky(UPLO::Lower).map_err(SolverError::Cholesky)?;
+        let _lower = dependent_covariance
+            .cholesky(UPLO::Lower)
+            .map_err(SolverError::Cholesky)?;
 
         unimplemented!("no impl for full-rank WLS for now.");
     }
@@ -112,7 +116,7 @@ mod test {
     use super::WeightedLeastSquares;
     use crate::builder::ProblemBuilder;
     use crate::chebyshev::{Basis, PolynomialSeries, Series};
-    use crate::solvers::{SolveSystem, Uncertainty};
+    use crate::solvers::{Covariance, SolveSystem};
 
     impl<E: Scalar<Real = E> + PartialOrd> Series<E> {
         pub(crate) fn from_coeff(coeff: Vec<E>, x: &[E]) -> Self {
@@ -160,17 +164,17 @@ mod test {
     fn wls<'a, E>(
         x: ArrayView1<'a, E>,
         y: ArrayView1<'a, E>,
-        uncertainty: &Uncertainty<'a, E>,
+        covariance: &Covariance<'a, E>,
         degree: usize,
     ) -> WeightedLeastSquares<'a, E>
     where
         E: Float + PartialOrd + Scalar<Real = E> + ScalarOperand + Lapack + FloatCore,
     {
         let builder = ProblemBuilder::new(x, y).unwrap();
-        let problem = match &uncertainty {
-            Uncertainty::None => builder.build(),
-            Uncertainty::Diagonal(uy) => builder.with_dependent_variance(*uy).unwrap().build(),
-            Uncertainty::Full(vy) => builder.with_dependent_covariance(*vy).build(),
+        let problem = match &covariance {
+            Covariance::None => builder.build(),
+            Covariance::Diagonal(uy) => builder.with_dependent_variance(*uy).unwrap().build(),
+            Covariance::Matrix(vy) => builder.with_dependent_covariance(*vy).build(),
         };
 
         let h = problem.design_matrix(degree).unwrap();
@@ -178,7 +182,7 @@ mod test {
         WeightedLeastSquares {
             y: y.to_owned(),
             h,
-            uncertainty: uncertainty.clone(),
+            covariance: covariance.clone(),
         }
     }
 
@@ -197,7 +201,7 @@ mod test {
         };
         let (x, y, series) = generate_data(&mut rng, domain, number_of_data_points, degree);
 
-        let wls: WeightedLeastSquares<'_, E> = wls(x.view(), y.view(), &Uncertainty::None, degree);
+        let wls: WeightedLeastSquares<'_, E> = wls(x.view(), y.view(), &Covariance::None, degree);
 
         let result = wls.solve().unwrap();
 
@@ -240,7 +244,7 @@ mod test {
         let wls: WeightedLeastSquares<'_, E> = wls(
             x.view(),
             y.view(),
-            &Uncertainty::Diagonal(standard_deviation.view()),
+            &Covariance::Diagonal(standard_deviation.view()),
             degree,
         );
 
