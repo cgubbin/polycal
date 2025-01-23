@@ -12,10 +12,9 @@
 //! the input and combining it with that on the calculated fitting coefficients.
 
 use argmin::{
-    core::{observers::ObserverMode, ArgminFloat, CostFunction, Executor, Gradient, Hessian},
+    core::{ArgminFloat, CostFunction, Executor, Gradient, Hessian},
     solver::{linesearch::MoreThuenteLineSearch, newton::NewtonCG},
 };
-use argmin_observer_slog::SlogLogger;
 use cert::{AbsUncertainty, Uncertainty};
 use ndarray::{Array1, Array2, ArrayView1, ScalarOperand};
 use ndarray_linalg::{Lapack, Scalar};
@@ -642,7 +641,6 @@ where
             // Run solver
             match Executor::new(cost, solver)
                 .configure(|state| state.param(init_param).max_iters(500))
-                .add_observer(SlogLogger::term(), ObserverMode::Never)
                 .run()
             {
                 Ok(res) => {
