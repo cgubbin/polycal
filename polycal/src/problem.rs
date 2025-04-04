@@ -41,6 +41,7 @@ pub enum Covariance<'a, E> {
 }
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 /// A constraint.
 ///
 /// Given a constraint we use the problem y = `p_n(x`, a) * multiplicative(x) + additive(x). A
@@ -148,7 +149,9 @@ where
             "finding best fit"
         );
 
-        let (_best_score, best_fit) = self.find_best_fit(fits);
+        let (best_score, best_fit) = self.find_best_fit(fits);
+
+        event!(Level::INFO, best_score = ?best_score, "found best fit");
 
         // TODO: Chi-2 validation at nu = m - n - 1
 

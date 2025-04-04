@@ -1,15 +1,56 @@
-use super::{Basis, CSeries, ChebyshevError, PolynomialSeries};
+use super::{Basis, CSeries, ChebyshevError, ConstrainedPolynomial, Polynomial, PolynomialSeries};
 use ndarray::{arr1, s, Array1, Array2, ScalarOperand};
 use ndarray_linalg::{eig::EigVals, Lapack, Scalar};
 use num_traits::float::FloatCore;
 use std::ops::Range;
 
+/// A Chebyshev c-series polynomial
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Series<E> {
-    pub(crate) coeff: CSeries<E>,
-    pub(crate) domain: Range<E>,
-    pub(crate) window: Range<E>,
-    pub(crate) basis: Basis,
+    /// The underlying Chebyshev polynomial coefficients
+    coeff: CSeries<E>,
+    /// Series are defined on range [-1, 1]
+    ///
+    /// The domain of the polynomial series is the unscaled physical domain
+    domain: Range<E>,
+    /// Basis of the polynomial is used to generate the underlying polynomials
+    ///
+    /// It must always be consistent with the series, so maybe we don't want this here in future
+    /// but for now we ensure this by preventing mutation of the series post-creation
+    basis: Basis,
+}
+
+impl<E> Series<E> {
+    /// Create a new Chebyshev series
+    ///
+    /// # Arguments
+    /// * `coeff` - The coefficients of the Chebyshev polynomial
+    /// * `domain` - The domain of the polynomial
+    pub fn new<C: Into<CSeries<E>>>(coeff: C, domain: Range<E>) -> Self {
+        let coeff: CSeries<E> = coeff.into();
+        let degree = coeff.len() - 1;
+        Self {
+            coeff,
+            basis: Basis::new(degree),
+            domain,
+        }
+    }
+}
+
+impl<E: Scalar<Real = E> + PartialOrd> Polynomial<E> for Series<E> {
+    fn polynomials(&self, t: E) -> Vec<E> {
+        self.basis.polynomials(t)
+    }
+}
+
+impl<E: Scalar<Real = E> + PartialOrd, S: PolynomialSeries<E>> ConstrainedPolynomial<E, S>
+    for Series<E>
+{
+    fn polynomials_with_constraint(&self, t: E, multiplicative_constraint: &S) -> Vec<E> {
+        self.basis
+            .polynomials_with_constraint(t, multiplicative_constraint)
+    }
 }
 
 impl<E: Clone> Series<E> {
@@ -32,7 +73,6 @@ impl<E: Scalar<Real = E>> std::ops::Mul for Series<E> {
             coeff,
             basis: Basis::new(degree),
             domain: self.domain,
-            window: self.window,
         }
     }
 }
@@ -47,7 +87,6 @@ impl<E: Scalar<Real = E>> std::ops::Add for Series<E> {
             coeff,
             basis: Basis::new(degree),
             domain: self.domain,
-            window: self.window,
         }
     }
 }
@@ -62,7 +101,6 @@ impl<E: Scalar<Real = E>> std::ops::Sub for Series<E> {
             coeff,
             basis: Basis::new(degree),
             domain: self.domain,
-            window: self.window,
         }
     }
 }
@@ -78,16 +116,11 @@ impl<E: Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd> Poly
         self.domain.clone()
     }
 
-    fn window(&self) -> Range<E> {
-        self.window.clone()
-    }
-
-    fn null(domain: Range<E>, window: Range<E>) -> Self {
+    fn null(domain: Range<E>) -> Self {
         Self {
             coeff: CSeries::from(vec![]),
             basis: Basis::new(0),
             domain,
-            window,
         }
     }
 
@@ -132,7 +165,6 @@ impl<E: Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd> Poly
             coeff: coeff_of_derivative.into(),
             basis: Basis::new(self.degree() - 1),
             domain: self.domain(),
-            window: self.window(),
         }
     }
 
@@ -256,16 +288,10 @@ mod test {
         let state = 40;
         let mut rng = Isaac64Rng::seed_from_u64(state);
         let domain_max: f64 = rng.gen::<f64>().abs();
-        let series = Series::null(
-            Range {
-                start: -domain_max,
-                end: domain_max,
-            },
-            Range {
-                start: -1.,
-                end: 1.,
-            },
-        );
+        let series = Series::null(Range {
+            start: -domain_max,
+            end: domain_max,
+        });
         let val = series.evaluate(rng.gen());
         approx::assert_relative_eq!(val, 0.0);
     }

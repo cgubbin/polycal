@@ -8,24 +8,31 @@
 //! A related quantity is the z-series. Z-series are often more useful for doing algebra on pairs
 //! of Chebyshev series. This module implements conversions between z-series and c-series, and
 //! implements fundamental operations on z-series allowing the higher order Chebyshev polynomials
-//! to also implement those operations.
+//! to also implement those operations based on the c-series representation.
 
 use ndarray::{s, Array1, ArrayView1, Axis};
 use ndarray_linalg::Scalar;
 
 /// A c-series represents the coefficients of a Chebyshev series
+///
+/// Coefficients are stored in ascending order of Chebyshev polynomial degree. The first element is
+/// the scalar offset
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct CSeries<E>(Array1<E>);
 
 impl<E> CSeries<E> {
+    // Create a new Chebyshev series from a vector of coefficients
     pub(crate) fn new(series: impl Into<Array1<E>>) -> Self {
         Self(series.into())
     }
 
+    // Returns the length of the underlying series
     pub(crate) fn len(&self) -> usize {
         self.0.len()
     }
 
+    /// Returns a borrowed slice of the underlying coefficients
     pub(crate) fn inner(&self) -> ArrayView1<'_, E> {
         self.0.view()
     }
@@ -47,9 +54,12 @@ impl<E: Scalar<Real = E>> std::ops::Mul for CSeries<E> {
     type Output = Self;
 
     fn mul(self, rhs: Self) -> Self::Output {
+        // These is no simple multiplication implementation for C-Series, so this function converts
+        // the series to z-series, and multiplies them
         let lhs_z_series = ZSeries::from(self);
         let rhs_z_series = ZSeries::from(rhs);
         let mul_z_series = lhs_z_series * rhs_z_series;
+        // Covert back to a c-series and remove zero coefficients
         Self::from(mul_z_series).trimmed()
     }
 }
@@ -59,15 +69,22 @@ impl<E: Scalar<Real = E>> std::ops::Add for CSeries<E> {
 
     fn add(self, rhs: Self) -> Self::Output {
         match self.len().checked_sub(rhs.len()) {
+            // If the lengths are equal, just add the two sets of coefficients
             Some(0) => Self(self.0 + rhs.0),
+            // The lhs is longer
             Some(_) => {
+                // pad the rhs with zeroes so both arrays are of equal length
                 let mut padded_rhs = Array1::zeros(self.len());
                 padded_rhs.slice_mut(s![..rhs.len()]).assign(&rhs.0);
+                // And add
                 Self(self.0 + padded_rhs)
             }
+            // The rhs is longer
             None => {
+                // pad the lhs with zeroes so both arrays are of equal length
                 let mut padded_self = Array1::zeros(rhs.len());
                 padded_self.slice_mut(s![..self.len()]).assign(&self.0);
+                // And add
                 Self(padded_self + rhs.0)
             }
         }
@@ -108,20 +125,33 @@ impl<E: Scalar<Real = E>> From<ZSeries<E>> for CSeries<E> {
 }
 
 impl<E: Scalar<Real = E>> CSeries<E> {
+    // Trims the polynomial to remove any zero-elements
+    //
+    // This is used after any add, or multiplication operations to reduce the order of the series
+    // to the true order.
     pub(crate) fn trimmed(self) -> Self {
+        // If the series is empty, or the last element is not zero, the series cannot be trimmed
         if self.0.is_empty() || *self.0.last().unwrap() != E::zero() {
             return self;
         }
 
+        // Else iterate backwards through the series until the first non-zero element is found and
+        // truncate the series at that point
         for (ii, ele) in self.0.iter().rev().enumerate() {
             if *ele != E::zero() {
                 return Self(self.0.slice(s![0..self.0.len() - 1 - ii]).to_owned());
             }
         }
+
+        // If the series is all zeroes, return a new series of zeroes of order 1
         Self(Array1::zeros(0))
     }
 }
 
+// An alternate z-series representation of the Chebyshev series.
+//
+// Z-series are used for multiplication of Chebyshev c-series, as they can be multiplied by a
+// simple convolution
 #[derive(Clone, Debug)]
 pub struct ZSeries<E>(Array1<E>);
 

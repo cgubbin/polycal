@@ -1,18 +1,21 @@
 use super::PolynomialSeries;
 use ndarray_linalg::Scalar;
 
+// A polynomial basis of given order.
+//
+// This struct really just exists so we can generate
+#[repr(transparent)]
 #[derive(Clone, Debug)]
-pub struct Basis {
-    degree: usize,
-}
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct Basis(usize);
 
 impl Basis {
     pub(crate) const fn new(degree: usize) -> Self {
-        Self { degree }
+        Self(degree)
     }
 
     pub(crate) const fn degree(&self) -> usize {
-        self.degree
+        self.0
     }
 }
 

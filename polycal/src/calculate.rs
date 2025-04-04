@@ -32,7 +32,8 @@ use crate::problem::Constraint;
 use crate::utils::to_scaled;
 use crate::{PolyCalError, PolyCalResult};
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 /// The results of a polynomial fit.
 pub struct Fit<E> {
     /// The solution calculated using provided calibration data
@@ -43,6 +44,17 @@ pub struct Fit<E> {
     pub(crate) response_domain: Range<E>,
     /// Constraint used in the fit procedure
     pub(crate) constraint: Option<Constraint<E>>,
+}
+
+impl<E: ::std::fmt::Debug> ::std::fmt::Debug for Fit<E> {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        f.debug_struct("Fit")
+            .field("solution", &self.solution)
+            .field("covariance", &format!("{:#?}", &self.covariance))
+            .field("response_domain", &self.response_domain)
+            .field("constraint", &self.constraint)
+            .finish()
+    }
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -94,7 +106,7 @@ impl<E: Scalar<Real = E>> Stimulus<E> {
 
 impl<E: Scalar<Real = E>> InverseVariance<E> {
     fn total(&self) -> E {
-        self.model + self.measurement
+        self.model + self.measurement // * E::from(1e6).unwrap()
     }
 
     fn total_uncertainty(&self) -> E {
@@ -102,15 +114,23 @@ impl<E: Scalar<Real = E>> InverseVariance<E> {
     }
 }
 
-impl<E> Fit<E> {
+impl<E> Fit<E>
+where
+    E: Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd,
+{
     /// Returns the range of stimulus values used in the calibration procedure.
     ///
     /// Calibrations are carried out on a finite region of parameter space. In the event a new
     /// prediction is requested using an input value outside this calibration region an error will
     /// be returned from the reconstrauction methods. Outside the calibration range the accuracy of
     /// the reconstruction is entirely uncertain.
-    pub const fn stimulus_domain(&self) -> &Range<E> {
-        &self.solution.domain
+    pub fn stimulus_domain(&self) -> Range<E> {
+        self.solution.domain()
+    }
+
+    /// The number of coefficients in the polynomial fit.
+    pub fn number_of_coefficients(&self) -> usize {
+        self.solution.number_of_coefficients()
     }
 
     pub const fn response_domain(&self) -> &Range<E> {
@@ -119,11 +139,6 @@ impl<E> Fit<E> {
 }
 
 impl<E: Scalar> Fit<E> {
-    /// The number of coefficients in the polynomial fit.
-    pub fn num_coeff(&self) -> usize {
-        self.solution.coeff.len()
-    }
-
     /// The coefficients associated with the underlying Chebyshev series
     pub fn coeff(&self) -> Vec<E> {
         self.solution.coeff()
@@ -193,8 +208,11 @@ where
     /// - If the length of the passed coefficient vector is not equal to the number of coefficients
     ///     associated with the polynomial.
     #[must_use]
-    pub fn from_coeff(&self, coeff: &[E]) -> Self {
-        assert_eq!(coeff.len(), self.num_coeff());
+    pub fn from_coeff(&self, coeff: &[E]) -> Self
+    where
+        E: Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd,
+    {
+        assert_eq!(coeff.len(), self.number_of_coefficients());
         let mut fit = self.clone();
         fit.solution.set_coeff(coeff.to_vec());
         fit
@@ -232,7 +250,7 @@ impl<
             return Err(PolyCalError::OutOfRangeUncertain {
                 value: stimulus.mean(),
                 evaluated: {
-                    let t = to_scaled(stimulus.mean(), self.stimulus_domain());
+                    let t = to_scaled(stimulus.mean(), &self.stimulus_domain());
                     let estimate = self.evaluate_direct(t);
                     let standard_uncertainty =
                         self.evaluate_direct_uncertainty(t, stimulus.standard_deviation());
@@ -243,7 +261,7 @@ impl<
                 kind: Kind::Stimulus,
             });
         }
-        let t = to_scaled(stimulus.mean(), self.stimulus_domain());
+        let t = to_scaled(stimulus.mean(), &self.stimulus_domain());
 
         // event!(Level::INFO, scaled = t, "evaluating series"); # TODO reinstate when testing is
         // complete
@@ -272,7 +290,7 @@ impl<
             return Err(PolyCalError::OutOfRangeCertain {
                 value: stimulus,
                 evaluated: {
-                    let t = to_scaled(stimulus, self.stimulus_domain());
+                    let t = to_scaled(stimulus, &self.stimulus_domain());
                     self.evaluate_direct(t)
                 },
 
@@ -280,7 +298,7 @@ impl<
                 kind: Kind::Stimulus,
             });
         }
-        let t = to_scaled(stimulus, self.stimulus_domain());
+        let t = to_scaled(stimulus, &self.stimulus_domain());
 
         let estimate = self.evaluate_direct(t);
 
@@ -303,14 +321,14 @@ impl<
             return Err(PolyCalError::OutOfRangeCertain {
                 value: stimulus,
                 evaluated: {
-                    let t = to_scaled(stimulus, self.stimulus_domain());
+                    let t = to_scaled(stimulus, &self.stimulus_domain());
                     self.evaluate_direct_derivative(t)
                 },
                 range: self.solution().domain(),
                 kind: Kind::Stimulus,
             });
         }
-        let t = to_scaled(stimulus, self.stimulus_domain());
+        let t = to_scaled(stimulus, &self.stimulus_domain());
 
         let estimate = self.evaluate_direct_derivative(t);
 
@@ -360,13 +378,14 @@ where
                         self.evaluate_inverse(response.mean(), guess, max_iter)?;
 
                     // event!(Level::INFO, "evaluating uncertainty"); # reinstate when testing is complete
-                    let variance = self
-                        .evaluate_inverse_variance(scaled_estimate, response.standard_deviation());
+                    let standard_deviation = self
+                        .evaluate_inverse_variance(scaled_estimate, response.standard_deviation())
+                        .total_uncertainty();
 
                     // Scale back to the true data type
                     let estimate =
-                        crate::utils::to_unscaled(scaled_estimate, self.stimulus_domain());
-                    AbsUncertainty::new(estimate, variance.total_uncertainty())
+                        crate::utils::to_unscaled(scaled_estimate, &self.stimulus_domain());
+                    AbsUncertainty::new(estimate, standard_deviation)
                 },
                 range: self.response_domain.clone(),
                 kind: Kind::Response,
@@ -376,12 +395,13 @@ where
         let scaled_estimate = self.evaluate_inverse(response.mean(), guess, max_iter)?;
 
         // event!(Level::INFO, "evaluating uncertainty"); # reinstate when testing is complete
-        let variance =
-            self.evaluate_inverse_variance(scaled_estimate, response.standard_deviation());
+        let standard_deviation = self
+            .evaluate_inverse_variance(scaled_estimate, response.standard_deviation())
+            .total_uncertainty();
 
         // Scale back to the true data type
-        let estimate = crate::utils::to_unscaled(scaled_estimate, self.stimulus_domain());
-        Ok(AbsUncertainty::new(estimate, variance.total_uncertainty()))
+        let estimate = crate::utils::to_unscaled(scaled_estimate, &self.stimulus_domain());
+        Ok(AbsUncertainty::new(estimate, standard_deviation))
     }
 }
 
@@ -433,15 +453,14 @@ impl<E: Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd> Fit<
     fn q(&self, scaled_root: E) -> E {
         let Range { start, end } = self.stimulus_domain();
         let series = self.solution();
-        (E::one() + E::one()) / (*end - *start) * series.derivative(1).evaluate(scaled_root)
+        (E::one() + E::one()) / (end - start) * series.derivative(1).evaluate(scaled_root)
     }
 
     pub(crate) fn evaluate_direct_uncertainty(&self, scaled_root: E, uncertainty_x: E) -> E {
         let g: Array1<E> = self.constraint.as_ref().map_or_else(
-            || self.solution.basis.polynomials(scaled_root).into(),
+            || self.solution.polynomials(scaled_root).into(),
             |constraint| {
                 self.solution
-                    .basis
                     .polynomials(scaled_root)
                     .into_iter()
                     .map(|poly| poly * constraint.multiplicative.evaluate(scaled_root))
@@ -463,10 +482,9 @@ impl<E: Scalar<Real = E> + ScalarOperand + Lapack + FloatCore + PartialOrd> Fit<
         uncertainty_y: E,
     ) -> InverseVariance<E> {
         let g: Array1<E> = self.constraint.as_ref().map_or_else(
-            || self.solution.basis.polynomials(scaled_root).into(),
+            || self.solution.polynomials(scaled_root).into(),
             |constraint| {
                 self.solution
-                    .basis
                     .polynomials(scaled_root)
                     .into_iter()
                     .map(|poly| poly * constraint.multiplicative.evaluate(scaled_root))

@@ -905,4 +905,39 @@ mod test {
             approx::assert_relative_eq!(y0, predicted_y.mean(), epsilon = 1e-8);
         }
     }
+
+    #[test]
+    fn test_problem_iso() {
+        use ndarray::arr1;
+        let x = arr1(&[
+            0.0, 65.0, 130.0, 195.0, 260.0, 325.0, 390.0, 455.0, 520.0, 585.0, 650.0, 715.0,
+        ]);
+        let y = arr1(&[
+            0.0004, 0.0812, 0.1440, 0.1957, 0.2437, 0.2840, 0.3201, 0.3499, 0.3829, 0.4100, 0.4353,
+            0.4543,
+        ]);
+        let u2y = vec![
+            0.0017, 0.0016, 0.0017, 0.0020, 0.0020, 0.0024, 0.0024, 0.0026, 0.0026, 0.0029, 0.0029,
+            0.0031,
+        ]
+        .into_iter()
+        .map(|x| x * x)
+        .collect::<ndarray::Array1<_>>();
+
+        let builder = ProblemBuilder::new(x.view(), y.view())
+            .unwrap()
+            .with_dependent_variance(u2y.view())
+            .unwrap()
+            .with_scoring_strategy(crate::ScoringStrategy::Bic);
+        let problem = builder.build();
+
+        let solution = problem.solve(6).unwrap();
+
+        dbg!(&solution);
+
+        let guess = solution
+            .stimulus(AbsUncertainty::new(0.3905, 0.0027), None, None)
+            .unwrap();
+        dbg!(&guess);
+    }
 }

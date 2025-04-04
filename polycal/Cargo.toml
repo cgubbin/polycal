@@ -1,6 +1,6 @@
 [package]
 name = "polycal"
-version = "0.1.9"
+version = "0.1.10"
 edition = "2021"
 license = "MIT"
 authors = ["Christopher Gubbin <chris.gubbin@gmail.com>"]
@@ -22,9 +22,10 @@ argmin = { version = "0.10", features = ["_ndarrayl"] }
 argmin-math = "0.4.0"
 blas-src = { version = "0.9", features = ["openblas"] }
 openblas-src = { version = "0.10", features = ["cblas", "system"] }
-ndarray = { version = "0.15", features = ["blas"] }
+ndarray = { version = "0.15", features = ["blas", "serde"] }
 ndarray-linalg = "0.16.0"
 ndarray-rand = "0.14.0"
+serde = { version = "1.0.219", features = ["derive"], optional = true }
 
 
 [dev-dependencies]

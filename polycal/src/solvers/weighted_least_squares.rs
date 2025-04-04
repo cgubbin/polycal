@@ -115,22 +115,13 @@ mod test {
 
     use super::WeightedLeastSquares;
     use crate::builder::ProblemBuilder;
-    use crate::chebyshev::{Basis, PolynomialSeries, Series};
+    use crate::chebyshev::{PolynomialSeries, Series};
     use crate::solvers::{Covariance, SolveSystem};
 
     impl<E: Scalar<Real = E> + PartialOrd> Series<E> {
         pub(crate) fn from_coeff(coeff: Vec<E>, x: &[E]) -> Self {
             let domain = crate::utils::find_limits(x);
-            let degree = coeff.len() - 1;
-            Self {
-                coeff: coeff.into(),
-                domain,
-                window: Range {
-                    start: -E::one(),
-                    end: E::one(),
-                },
-                basis: Basis::new(degree),
-            }
+            Self::new(coeff, domain)
         }
     }
 
