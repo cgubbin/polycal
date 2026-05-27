@@ -1273,3 +1273,152 @@ mod test {
         }
     }
 }
+
+#[cfg(feature = "serde")]
+#[cfg(test)]
+mod gas_sensor_tests {
+    use super::Fit;
+    use cert::{AbsUncertainty, Uncertainty};
+    use serde::Deserialize;
+
+    fn run_test(dir: &str) {
+        let calibration_data_path = format!("{dir}data.csv");
+
+        let mut rdr = csv::ReaderBuilder::new()
+            .has_headers(false)
+            .from_path(calibration_data_path)
+            .unwrap();
+
+        #[derive(Deserialize)]
+        struct Record {
+            x: f64,
+            y: f64,
+            uncertainty: f64,
+        }
+
+        let mut stimulus = vec![];
+        let mut response_mean = vec![];
+        let mut response_uncertainty = vec![];
+
+        for result in rdr.deserialize() {
+            let record: Record = result.unwrap();
+            stimulus.push(record.x);
+            response_mean.push(record.y);
+            response_uncertainty.push(record.uncertainty);
+        }
+
+        let fit_path = format!("{dir}fit.ron");
+        let fit_str = std::fs::read_to_string(fit_path).unwrap();
+        let fit = ron::from_str::<Fit<f64>>(&fit_str).unwrap();
+
+        #[derive(serde::Serialize)]
+        struct ReconstructionRecord {
+            expected: f64,
+            error_estimate: f64,
+        }
+
+        let mut out = ::std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .open(format!("{dir}reconstruction.csv"))
+            .unwrap();
+        let mut wtr = csv::Writer::from_writer(&mut out);
+
+        for ((expected, each), err) in stimulus
+            .into_iter()
+            .zip(response_mean)
+            .zip(response_uncertainty)
+        {
+            let calculated = fit
+                .stimulus(AbsUncertainty::new(each, err), None, None)
+                .unwrap_or_default();
+
+            let record = ReconstructionRecord {
+                expected,
+                error_estimate: calculated.standard_deviation(),
+            };
+
+            wtr.serialize(record).unwrap();
+        }
+        wtr.flush().unwrap();
+    }
+
+    #[test]
+    fn one_peak_teos_low_concentration() {
+        let dir = [
+            "/Users/kit/Repos/calibrate/calibrate/crates/cli/new_data/4_peak_central/",
+            "/Users/kit/Repos/calibrate/calibrate/crates/cli/new_data/4_peak_plus_5K/",
+            "/Users/kit/Repos/calibrate/calibrate/crates/cli/new_data/4_peak_minus_5K/",
+            "/Users/kit/Repos/calibrate/calibrate/crates/cli/new_data/4_peak_plus_10mtorr/",
+            "/Users/kit/Repos/calibrate/calibrate/crates/cli/new_data/4_peak_minus_10mtorr/",
+        ];
+        for each in dir {
+            run_test(each);
+        }
+    }
+
+    #[test]
+    fn run_test_plus_5() {
+        let calibration_data_path =
+            "/Users/kit/Repos/calibrate/calibrate/crates/cli/new_data/4_peak_plus_5K/data.csv";
+
+        let mut rdr = csv::ReaderBuilder::new()
+            .has_headers(false)
+            .from_path(calibration_data_path)
+            .unwrap();
+
+        #[derive(Deserialize)]
+        struct Record {
+            x: f64,
+            y: f64,
+            uncertainty: f64,
+        }
+
+        let mut stimulus = vec![];
+        let mut response_mean = vec![];
+        let mut response_uncertainty = vec![];
+
+        for result in rdr.deserialize() {
+            let record: Record = result.unwrap();
+            stimulus.push(record.x);
+            response_mean.push(record.y);
+            response_uncertainty.push(record.uncertainty);
+        }
+
+        let fit_path =
+            "/Users/kit/Repos/calibrate/calibrate/crates/cli/new_data/4_peak_central/fit.ron";
+        let fit_str = std::fs::read_to_string(fit_path).unwrap();
+        let fit = ron::from_str::<Fit<f64>>(&fit_str).unwrap();
+
+        #[derive(serde::Serialize)]
+        struct ReconstructionRecord {
+            expected: f64,
+            error_estimate: f64,
+        }
+
+        let mut out = ::std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .open(format!("/Users/kit/Repos/calibrate/calibrate/crates/cli/new_data/4_peak_central/plus_5_reconstruction.csv"))
+            .unwrap();
+        let mut wtr = csv::Writer::from_writer(&mut out);
+
+        for ((expected, each), err) in stimulus
+            .into_iter()
+            .zip(response_mean)
+            .zip(response_uncertainty)
+        {
+            let calculated = fit
+                .stimulus(AbsUncertainty::new(each, err), None, None)
+                .unwrap_or_default();
+
+            let record = ReconstructionRecord {
+                expected,
+                error_estimate: calculated.standard_deviation(),
+            };
+
+            wtr.serialize(record).unwrap();
+        }
+        wtr.flush().unwrap();
+    }
+}
