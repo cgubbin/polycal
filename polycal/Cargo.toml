@@ -18,7 +18,7 @@ num-traits = "0.2"
 tracing = "0.1.41"
 rand_isaac = "0.3.0"
 thiserror = "2.0.7"
-argmin = { version = "0.10", features = ["_ndarrayl"] }
+argmin = { version = "0.11", features = ["_ndarrayl"] }
 argmin-math = "0.4.0"
 blas-src = { version = "0.9", features = ["openblas"] }
 openblas-src = { version = "0.10", features = ["cblas", "system"] }
