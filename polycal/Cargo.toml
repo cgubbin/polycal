@@ -24,7 +24,7 @@ blas-src = { version = "0.9", features = ["openblas"] }
 openblas-src = { version = "0.10", features = ["cblas", "system"] }
 ndarray = { version = "0.15", features = ["blas", "serde"] }
 ndarray-linalg = "0.16.0"
-ndarray-rand = "0.14.0"
+ndarray-rand = "0.16.0"
 serde = { version = "1.0.219", features = ["derive"], optional = true }
 
 
