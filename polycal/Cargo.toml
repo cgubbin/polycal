@@ -1,7 +1,8 @@
 [package]
 name = "polycal"
 version = "0.1.10"
-edition = "2021"
+edition = "2024"
+rust-version = "1.85"
 license = "MIT"
 authors = ["Christopher Gubbin <chris.gubbin@gmail.com>"]
 description = "methods for fitting and using polynomial calibration functions following ISO/TS 28038"
@@ -13,23 +14,38 @@ path = "src/lib.rs" # The source file of the target.
 
 
 [dependencies]
-cert = "0.1"
-num-traits = "0.2"
-tracing = "0.1.41"
-rand_isaac = "0.3.0"
-thiserror = "2.0.7"
-argmin = { version = "0.10", features = ["_ndarrayl"] }
-argmin-math = "0.4.0"
-blas-src = { version = "0.9", features = ["openblas"] }
-openblas-src = { version = "0.10", features = ["cblas", "system"] }
-ndarray = { version = "0.15", features = ["blas", "serde"] }
-ndarray-linalg = "0.16.0"
-ndarray-rand = "0.14.0"
-serde = { version = "1.0.219", features = ["derive"], optional = true }
+ndarray = "0.17.2"
+polynomial_series = {path = "../../poly_series", default-features = false}
+serde = { version = "1.0.228", optional = true }
+
+[features]
+default = ["openblas-system"]
+
+openblas-system = [
+  "polynomial_series/linalg-openblas-system",
+]
+serde = ["dep:serde"]
+
+# openblas-static = [
+#   "polynomial-series/linalg-openblas-static",
+# ]
+
+# netlib-system = [
+#   "polynomial-series/linalg-netlib-system",
+# ]
+
+# netlib-static = [
+#   "polynomial-series/linalg-netlib-static",
+# ]
+
+# intel-mkl-system = [
+#   "polynomial-series/linalg-intel-mkl-system",
+# ]
+
+# intel-mkl-static = [
+#   "polynomial-series/linalg-intel-mkl-static",
+# ]
 
 
 [dev-dependencies]
 approx = "0.5.1"
-csv = "1.3.1"
-ron = "0.9.0"
-serde = { version = "1.0.219", features = ["derive"] }
