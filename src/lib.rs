@@ -140,7 +140,7 @@
 //! This release focuses on polynomial calibration with uncertainty in the
 //! response variable. Errors-in-variables fitting, total least squares and
 //! Monte Carlo uncertainty propagation are planned extension points rather than
-//! part of the stable v0.1 interface.
+//! part of the stable v0.3 interface.
 //!
 //! [`Constraint`]: crate::fit::Constraint
 //! [`Fit`]: crate::fit::Fit
