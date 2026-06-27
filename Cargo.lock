@@ -944,7 +944,6 @@ dependencies = [
  "ndarray-linalg",
  "num-traits",
  "poly_series",
- "serde",
  "statrs",
  "thiserror 2.0.18",
 ]

@@ -19,13 +19,11 @@ ndarray = "0.17.2"
 ndarray-linalg = { version = "0.18.1", optional = true }
 num-traits = "0.2.19"
 poly_series = {version = "0.2.3" , default-features = false}
-serde = { version = "1.0.228", optional = true }
 statrs = { version = "0.18.0", default-features = false }
 thiserror = "2.0.18"
 
 [features]
 default = ["openblas-system"]
-serde = ["dep:serde"]
 openblas-system = [
   "poly_series/linalg-openblas-system",
     "ndarray-linalg/openblas-system",

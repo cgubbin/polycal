@@ -47,7 +47,6 @@ use std::ops::Range;
 /// The covariance stored on [`Fit`] refers to the coefficients of the free
 /// polynomial, not necessarily to the coefficients of the fully composed curve.
 #[derive(Clone, Debug)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Constraint<E> {
     /// Additive component `a(x)` of the constraint.
     pub(crate) additive: ChebyshevSeries<E>,
