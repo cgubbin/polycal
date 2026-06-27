@@ -131,7 +131,7 @@ Example:
 
 ```toml
 [dependencies]
-polycal = { version = "...", features = ["linalg-openblas-system"] }
+polycal = { version = "...", features = ["openblas-system"] }
 ```
 
 ### Scope of this release
@@ -139,7 +139,7 @@ polycal = { version = "...", features = ["linalg-openblas-system"] }
 This release focuses on polynomial calibration with uncertainty in the
 response variable. Errors-in-variables fitting, total least squares and
 Monte Carlo uncertainty propagation are planned extension points rather than
-part of the stable v0.3 interface.
+part of the stable v0.2 interface.
 
 [`Constraint`]: crate::fit::Constraint
 [`Fit`]: crate::fit::Fit
