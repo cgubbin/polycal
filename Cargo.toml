@@ -25,32 +25,36 @@ thiserror = "2.0.18"
 
 [features]
 default = ["openblas-system"]
-
+serde = ["dep:serde"]
 openblas-system = [
   "poly_series/linalg-openblas-system",
     "ndarray-linalg/openblas-system",
 ]
-serde = ["dep:serde"]
 
-# openblas-static = [
-#   "polynomial-series/linalg-openblas-static",
-# ]
+openblas-static = [
+  "poly_series/linalg-openblas-static",
+    "ndarray-linalg/openblas-static",
+]
 
-# netlib-system = [
-#   "polynomial-series/linalg-netlib-system",
-# ]
+netlib-system = [
+  "poly_series/linalg-netlib-system",
+    "ndarray-linalg/netlib-system",
+]
 
-# netlib-static = [
-#   "polynomial-series/linalg-netlib-static",
-# ]
+netlib-static = [
+  "poly_series/linalg-netlib-static",
+    "ndarray-linalg/netlib-static",
+]
 
-# intel-mkl-system = [
-#   "polynomial-series/linalg-intel-mkl-system",
-# ]
+intel-mkl-system = [
+  "poly_series/linalg-intel-mkl-system",
+    "ndarray-linalg/intel-mkl-system",
+]
 
-# intel-mkl-static = [
-#   "polynomial-series/linalg-intel-mkl-static",
-# ]
+intel-mkl-static = [
+  "poly_series/linalg-intel-mkl-static",
+    "ndarray-linalg/intel-mkl-static",
+]
 
 
 [dev-dependencies]

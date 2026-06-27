@@ -1,63 +1,156 @@
-[![codecov](https://codecov.io/gh/sensoriumtl/polycal/graph/badge.svg?token=6FRPE3DXWO)](https://codecov.io/gh/sensoriumtl/polycal)
+# polycal
 
-# Polycal
----
-Methods for determining, verifying and using polynomial calibration curves. The methods used conform as closely as possible to ISO/TS 28038.
+## Polycal
 
-## Usage
+Polynomial calibration curves with uncertainty-aware model selection.
 
-To use the crate we first build a `Problem`, using known calibration data. We then then solve for the best fit solution:
+`polycal` provides a small API for constructing calibration problems,
+fitting polynomial calibration curves, validating that those curves are
+suitable for calibration use, and evaluating the resulting calibration
+functions in both directions.
+
+The crate is designed around calibration workflows where a set of known
+stimulus values is paired with measured response values. It fits Chebyshev
+polynomial calibration curves using the lower-level `poly_series` crate.
+
+### Core workflow
+
+A calibration workflow usually has four steps:
+
+1. Build a [`Problem`] from calibration data.
+2. Choose an uncertainty model.
+3. Fit one degree, or scan several polynomial degrees.
+4. Evaluate the fitted curve from stimulus to response, or invert it from
+   response to stimulus.
+
 ```rust
-use ndarray::Array1;
-use polycal::ProblemBuilder;
+use polycal::{Problem, ScoringStrategy};
 
-a = 1.;
-b = 2.;
-stimulus: Array1<f64> = Array1::range(0., 10., 0.5);
-num_data_points = stimulus.len();
-response: Array1<f64> = stimulus
-    .iter()
-    .map(|x| a + b * x)
-    .collect();
-let dependent_uncertainty: Array1<f64> = response
-    .iter()
-    .map(|x| x / 1000.0)
-    .collect();
+let stimulus: Vec<f64> = vec![0.0, 1.0, 2.0, 3.0, 4.0];
+let response = vec![1.0, 3.0, 5.0, 7.0, 9.0];
 
-let problem = ProblemBuilder::new(stimulus.view(), response.view())
-    .unwrap()
-    .with_dependent_variance(dependent_uncertainty.view())
-    .unwrap()
-    .build();
+let fit = Problem::builder()
+    .with_data(stimulus, response)
+    .infer_domain()
+    .score_by(ScoringStrategy::Aicc)
+    .without_goodness_of_fit()
+    .build()?
+    .solve_degree(1)?;
 
-let maximum_degree = 5;
+let y = fit.response(2.5)?;
+let x = fit.stimulus(6.0)?;
 
-let best_fit = problem.solve(maximum_degree).unwrap();
-
-for (expected, actual) in response.into_iter().zip(stimulus.into_iter().map(|x|
-    best_fit.certain_response(x).unwrap())).skip(1).take(num_data_points-2) {
-        assert!((expected - actual).abs() < 1e-5);;
-}
+assert!((y - 6.0).abs() < 1e-10);
+assert!((x - 2.5).abs() < 1e-10);
 ```
 
-We can either reconstruct unknown response from known stimulus values:
-```rust
-use polycal::{AbsUncertainty, Uncertainty};
+### Calibration problems
 
-let known_stimulus = AbsUncertainty::new(1.0, 0.01);
-let estimated_response = best_fit.response(known_stimulus);
-```
-or calculate unknown stimulus from a known response
-```rust
-use polycal::{AbsUncertainty, Uncertainty};
+A [`Problem`] stores:
 
-let known_stimulus = AbsUncertainty::new(1.0, 0.01);
-let initial_guess = None;
-let max_iter = Some(100);
-let estimated_stimulus = best_fit.stimulus(
-    known_response,
-    initial_guess,
-    max_iter
-);
-let estimated_stimulus = best_fit.stimulus(known_response);
+- stimulus values,
+- response values,
+- the calibration domain,
+- an uncertainty model,
+- an optional calibration constraint,
+- a goodness-of-fit policy, and
+- a scoring strategy for model selection.
+
+Problems are constructed with [`Problem::builder`]. The builder validates
+array lengths, finite values, uncertainty dimensions and calibration domain
+before producing a problem.
+
+### Uncertainty models
+
+`polycal` supports several uncertainty descriptions through [`Uncertainty`]:
+
+- no supplied uncertainty,
+- independent response standard uncertainties,
+- a full response covariance matrix,
+- independent stimulus and response standard uncertainties,
+- full stimulus and response covariance matrices.
+
+In this release, fitting with uncertainty in the response variable is
+implemented. Fitting with uncertainty in the stimulus variable is recognised
+by the API but not yet implemented; those paths return an unsupported-method
+error.
+
+### Constraints
+
+Calibration curves may be constrained using [`Constraint`].
+
+A constrained model is written as:
+
 ```
+f(x) = a(x) + m(x) q(x)
+```
+
+where `q(x)` is the free fitted polynomial, `a(x)` is an additive component,
+and `m(x)` is a multiplicative component.
+
+This can encode common calibration requirements such as forcing the curve to
+pass through the origin.
+
+### Model selection
+
+[`Problem::solve_up_to_degree`] fits candidate polynomial degrees and ranks
+accepted candidates using a [`ScoringStrategy`].
+
+Candidate curves are rejected if they are not monotonic, because a calibration
+curve must provide a unique inverse mapping from response to stimulus.
+
+Optional goodness-of-fit validation can also reject candidates whose χ²
+statistic lies outside the configured confidence interval.
+
+### Evaluation
+
+A fitted [`Fit`] can be evaluated in both directions:
+
+- [`Fit::response`] maps stimulus to response.
+- [`Fit::stimulus`] maps response to stimulus.
+
+Fallible evaluation is used so that out-of-domain values, non-monotonic
+curves and ambiguous inverse solutions are reported as errors rather than
+silent numerical failures.
+
+Uncertainty propagation is available through:
+
+- [`Fit::response_with_uncertainty`],
+- [`Fit::stimulus_estimate_first_order`].
+
+These methods propagate supplied input uncertainty and fitted coefficient
+covariance using local linearisation.
+
+### Feature flags
+
+Root finding, fitting and generalized least-squares calculations require a
+BLAS/LAPACK backend through. The recommented pattern is to
+enable one backend feature on this crate.
+
+Example:
+
+```toml
+[dependencies]
+polycal = { version = "...", features = ["linalg-openblas-system"] }
+```
+
+### Scope of this release
+
+This release focuses on polynomial calibration with uncertainty in the
+response variable. Errors-in-variables fitting, total least squares and
+Monte Carlo uncertainty propagation are planned extension points rather than
+part of the stable v0.1 interface.
+
+[`Constraint`]: crate::fit::Constraint
+[`Fit`]: crate::fit::Fit
+[`Fit::response`]: crate::fit::Fit::response
+[`Fit::response_with_uncertainty`]: crate::fit::Fit::response_with_uncertainty
+[`Fit::stimulus`]: crate::fit::Fit::stimulus
+[`Fit::stimulus_estimate_first_order`]: crate::fit::Fit::stimulus_estimate_first_order
+[`Problem`]: crate::Problem
+[`Problem::builder`]: crate::Problem::builder
+[`Problem::solve_up_to_degree`]: crate::Problem::solve_up_to_degree
+[`ScoringStrategy`]: crate::ScoringStrategy
+[`Uncertainty`]: crate::problem::Uncertainty
+
+License: MIT

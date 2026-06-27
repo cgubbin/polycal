@@ -270,7 +270,7 @@ where
 
         for i in 0..jacobian.len() {
             for j in 0..jacobian.len() {
-                variance = variance + jacobian[i] * covariance[[i, j]] * jacobian[j];
+                variance += jacobian[i] * covariance[[i, j]] * jacobian[j];
             }
         }
 

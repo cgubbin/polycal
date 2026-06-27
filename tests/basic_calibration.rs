@@ -1,4 +1,4 @@
-use poly_series::{PolynomialRoots, PolynomialSeries};
+use poly_series::PolynomialRoots;
 use polycal::{Problem, ScoringStrategy};
 
 const EPS: f64 = 1.0e-6;

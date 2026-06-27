@@ -136,10 +136,10 @@ where
             let scale = E::one() / uy[row];
 
             for col in 0..=degree {
-                design[[row, col]] = design[[row, col]] * scale;
+                design[[row, col]] *= scale;
             }
 
-            rhs[row] = rhs[row] * scale;
+            rhs[row] *= scale;
         }
 
         self.fit_from_design(

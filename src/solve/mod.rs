@@ -239,7 +239,7 @@ where
             ),
 
             Uncertainty::YCovariance { vy } => {
-                let residual = self.residual_vector(&curve);
+                let residual = self.residual_vector(curve);
                 quadratic_form_inverse_covariance(&residual, vy)
             }
 

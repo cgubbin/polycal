@@ -282,6 +282,7 @@ impl<E> Fit<E> {
 }
 
 /// Numerical method used to construct a calibration fit.
+#[allow(clippy::enum_variant_names)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum FitMethod {
     /// Ordinary least squares.
