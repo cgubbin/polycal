@@ -1,15 +1,89 @@
+//! Model selection criteria for calibration curve fitting.
+//!
+//! When fitting several candidate polynomial degrees, the calibration routine
+//! must decide which model provides the best balance between accuracy and
+//! complexity. `ScoringStrategy` defines the criterion used to rank candidate
+//! fits.
+//!
+//! All strategies operate on the goodness-of-fit statistic (typically the
+//! χ² statistic) and apply different penalties for model complexity.
+//!
+//! ## Available strategies
+//!
+//! - [`ScoringStrategy::ChiSquare`] minimises the χ² statistic alone. This
+//!   favours the closest fit to the observations and does not penalise
+//!   additional polynomial coefficients.
+//!
+//! - [`ScoringStrategy::Aic`] uses Akaike's Information Criterion,
+//!
+//!   ```text
+//!   AIC = χ² + 2k
+//!   ```
+//!
+//!   where *k* is the number of fitted coefficients.
+//!
+//!   AIC attempts to minimise expected information loss and is often a good
+//!   general-purpose choice when selecting between several plausible models.
+//!
+//! - [`ScoringStrategy::Aicc`] applies the small-sample correction to AIC,
+//!
+//!   ```text
+//!   AICc = AIC + 2k(k + 1)/(n - k - 1)
+//!   ```
+//!
+//!   where *n* is the number of observations.
+//!
+//!   AICc should generally be preferred over AIC when the number of samples is
+//!   not much larger than the number of fitted coefficients.
+//!
+//! - [`ScoringStrategy::Bic`] uses the Bayesian Information Criterion,
+//!
+//!   ```text
+//!   BIC = χ² + k ln(n)
+//!   ```
+//!
+//!   which applies a stronger penalty for model complexity than AIC. BIC tends
+//!   to favour simpler calibration curves as the number of observations
+//!   increases.
+//!
+//! ## Choosing a strategy
+//!
+//! For most calibration problems:
+//!
+//! - Use [`ScoringStrategy::Aicc`] for small or moderate datasets.
+//! - Use [`ScoringStrategy::Aic`] when predictive performance is the primary
+//!   objective and the sample size is large.
+//! - Use [`ScoringStrategy::Bic`] when model simplicity is preferred.
+//! - Use [`ScoringStrategy::ChiSquare`] when the polynomial degree is fixed and
+//!   only goodness-of-fit is of interest.
+
 use num_traits::{Float, FromPrimitive};
 
-/// Different scoring strategies for fit procedure
+/// Criterion used to rank competing polynomial fits.
+///
+/// Lower scores are preferred.
 #[derive(Copy, Clone, Debug)]
 pub enum ScoringStrategy {
-    /// Akaike's method
+    /// Akaike Information Criterion (AIC).
+    ///
+    /// Balances goodness-of-fit against model complexity.
     Aic,
-    /// Akaike's corrected method
+
+    /// Corrected Akaike Information Criterion (AICc).
+    ///
+    /// Recommended when the number of observations is not much larger than the
+    /// number of fitted coefficients.
     Aicc,
-    /// Bayesian
+
+    /// Bayesian Information Criterion (BIC).
+    ///
+    /// Applies a stronger complexity penalty than AIC, favouring simpler
+    /// models.
     Bic,
-    /// Pure chi-squared residuals
+
+    /// Pure χ² goodness-of-fit.
+    ///
+    /// No penalty is applied for additional coefficients.
     ChiSquare,
 }
 

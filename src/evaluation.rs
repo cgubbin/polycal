@@ -1,71 +1,155 @@
+//! Evaluation and first-order uncertainty propagation.
+//!
+//! This module provides the public evaluation API for a fitted calibration
+//! curve.
+//!
+//! There are two directions:
+//!
+//! - [`Fit::response`] evaluates the calibration curve from stimulus to response.
+//! - [`Fit::stimulus`] inverts the calibration curve from response to stimulus.
+//!
+//! Inversion is fallible because calibration curves must be monotonic and the
+//! requested response must correspond to a unique stimulus in the calibration
+//! domain.
+//!
+//! The uncertainty methods use first-order local linearisation. For response
+//! evaluation this propagates both stimulus uncertainty and coefficient
+//! covariance. For inverse stimulus estimation this propagates response
+//! uncertainty and coefficient covariance through the local sensitivity
+//! `df/dx`.
+//!
 use crate::fit::Fit;
 
 use num_traits::{Float, FromPrimitive};
 use poly_series::{ChebyshevSeries, PolynomialRoots, PolynomialSeries};
 use std::ops::Range;
 
+/// Error returned while evaluating or inverting a calibration fit.
 #[derive(Debug, thiserror::Error)]
 pub enum EvaluationError<E> {
+    /// The supplied stimulus is outside the calibration domain.
     #[error("stimulus {value:?} is outside calibration domain {domain:?}")]
     StimulusOutsideDomain { value: E, domain: Range<E> },
 
+    /// The supplied response is outside the observed response domain.
     #[error("response {value:?} is outside response domain {domain:?}")]
     ResponseOutsideDomain { value: E, domain: Range<E> },
 
+    /// The calibration curve is not monotonic.
+    ///
+    /// A non-monotonic curve cannot provide a unique inverse mapping from
+    /// response to stimulus.
     #[error("calibration curve is not monotonic")]
     NonMonotonic,
 
-    #[error("invalid value in uncertainty")]
+    /// An uncertainty value was NaN, infinite or negative.
+    #[error("uncertainty must be finite and non-negative")]
     InvalidUncertainty,
 
+    /// No stimulus value was found for the requested response.
     #[error("no inverse solution found for response {value:?}")]
     NoInverseSolution { value: E },
 
+    /// More than one stimulus value was found for the requested response.
     #[error("multiple inverse solutions found for response {value:?}: {roots:?}")]
     MultipleInverseSolutions { value: E, roots: Vec<E> },
 
+    /// Root finding failed during inverse evaluation.
     #[error("root finding failed")]
     RootFinding(#[from] poly_series::ChebyshevError),
 
+    /// The local derivative was too small for stable first-order inverse
+    /// uncertainty propagation.
     #[error("local sensitivity is too close to zero at stimulus {stimulus:?}: slope {slope:?}")]
     NearZeroSensitivity { stimulus: E, slope: E },
 }
 
+/// Estimated value with optional standard uncertainty.
 #[derive(Clone, Debug)]
 pub struct Estimate<E> {
-    value: E,
-    standard_uncertainty: Option<E>,
+    /// Central estimate.
+    pub value: E,
+
+    /// Standard uncertainty of the estimate, when available.
+    pub standard_uncertainty: Option<E>,
+}
+
+use std::fmt;
+
+impl<E> fmt::Display for Estimate<E>
+where
+    E: fmt::Display,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.standard_uncertainty {
+            Some(uncertainty) => match f.precision() {
+                Some(precision) => {
+                    write!(
+                        f,
+                        "{value:.precision$} ± {uncertainty:.precision$}",
+                        value = self.value,
+                    )
+                }
+                None => write!(f, "{} ± {}", self.value, uncertainty),
+            },
+            None => match f.precision() {
+                Some(precision) => write!(f, "{value:.precision$}", value = self.value),
+                None => write!(f, "{}", self.value),
+            },
+        }
+    }
 }
 
 impl<E> Fit<E>
 where
     E: Float + FromPrimitive + ndarray_linalg::Scalar<Real = E> + ndarray_linalg::Lapack,
 {
+    /// Evaluate the response for a stimulus value.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EvaluationError::StimulusOutsideDomain`] if `stimulus` lies
+    /// outside the calibration domain.
     pub fn response(&self, stimulus: E) -> Result<E, EvaluationError<E>> {
-        if !contains_closed(&self.curve.domain(), stimulus) {
+        if !contains_closed(&self.calibration_curve().domain(), stimulus) {
             return Err(EvaluationError::StimulusOutsideDomain {
                 value: stimulus,
-                domain: self.curve.domain(),
+                domain: self.calibration_curve().domain(),
             });
         }
 
-        Ok(self.curve.evaluate(stimulus))
+        Ok(self.calibration_curve().evaluate(stimulus))
     }
 
+    /// Estimate the stimulus corresponding to a response value.
+    ///
+    /// This inverts the calibration curve by solving
+    ///
+    /// ```text
+    /// f(x) - response = 0
+    /// ```
+    ///
+    /// over the calibration domain.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the response is outside the response domain, the
+    /// calibration curve is non-monotonic, no inverse is found, or multiple
+    /// inverse roots are found.
     pub fn stimulus(&self, response: E) -> Result<E, EvaluationError<E>> {
-        if !contains_closed(&self.response_domain, response) {
+        if !contains_closed(&self.response_domain(), response) {
             return Err(EvaluationError::ResponseOutsideDomain {
                 value: response,
-                domain: self.response_domain.clone(),
+                domain: self.response_domain(),
             });
         }
 
-        if !self.curve.is_monotonic()? {
+        if !self.calibration_curve().is_monotonic()? {
             return Err(EvaluationError::NonMonotonic);
         }
 
-        let shifted =
-            self.curve.clone() - ChebyshevSeries::new(vec![response], self.curve.domain())?;
+        let shifted = self.calibration_curve().clone()
+            - ChebyshevSeries::new(vec![response], self.calibration_curve().domain())?;
 
         let roots = shifted.roots_in_domain()?;
 
@@ -79,6 +163,25 @@ where
         }
     }
 
+    /// Evaluate the response and propagate uncertainty by first-order
+    /// linearisation.
+    ///
+    /// The propagated response variance is
+    ///
+    /// ```text
+    /// u_y² = (df/dx)² u_x² + J Cov(c) Jᵀ
+    /// ```
+    ///
+    /// where `J` is the coefficient Jacobian of the final calibration curve
+    /// with respect to the fitted free-polynomial coefficients.
+    ///
+    /// For constrained fits, the coefficient Jacobian includes the
+    /// multiplicative constraint.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the stimulus is outside the calibration domain or if
+    /// `stimulus_uncertainty` is invalid.
     pub fn response_with_uncertainty(
         &self,
         stimulus: E,
@@ -88,7 +191,10 @@ where
 
         validate_standard_uncertainty(stimulus_uncertainty)?;
 
-        let slope = self.curve.first_derivative().evaluate(stimulus);
+        let slope = self
+            .calibration_curve()
+            .first_derivative()
+            .evaluate(stimulus);
 
         let variance_from_input = slope * slope * stimulus_uncertainty * stimulus_uncertainty;
 
@@ -104,18 +210,36 @@ where
         })
     }
 
+    /// Estimate the stimulus and propagate uncertainty by first-order
+    /// linearisation.
+    ///
+    /// This first computes the nominal stimulus `x` satisfying `f(x) = response`,
+    /// then propagates response uncertainty and coefficient covariance through
+    /// the local sensitivity:
+    ///
+    /// ```text
+    /// u_x² ≈ (u_y² + J Cov(c) Jᵀ) / (df/dx)²
+    /// ```
+    ///
+    /// This is a local approximation and is most appropriate when the inverse
+    /// problem is well-conditioned near the returned stimulus.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if inversion fails, if `response_uncertainty` is
+    /// invalid, or if the local sensitivity is too close to zero
     pub fn stimulus_estimate_first_order(
         &self,
         response: E,
         response_uncertainty: E,
-    ) -> Result<Estimate<E>, EvaluationError<E>>
-    where
-        E: ndarray_linalg::Scalar<Real = E> + ndarray_linalg::Lapack,
-    {
+    ) -> Result<Estimate<E>, EvaluationError<E>> {
         validate_standard_uncertainty(response_uncertainty)?;
 
         let stimulus = self.stimulus(response)?;
-        let slope = self.curve.first_derivative().evaluate(stimulus);
+        let slope = self
+            .calibration_curve()
+            .first_derivative()
+            .evaluate(stimulus);
 
         let min_slope = Float::sqrt(E::epsilon());
 
@@ -139,7 +263,7 @@ where
     }
 
     fn variance_from_coefficients(&self, stimulus: E) -> Option<E> {
-        let covariance = self.covariance.as_ref()?;
+        let covariance = self.covariance()?;
         let jacobian = self.coefficient_jacobian(stimulus);
 
         let mut variance = E::zero();
@@ -154,11 +278,11 @@ where
     }
 
     fn coefficient_jacobian(&self, stimulus: E) -> Vec<E> {
-        let degree = self.free_polynomial.degree();
-        let basis = chebyshev_basis_at(stimulus, degree, &self.free_polynomial.domain());
+        let degree = self.free_polynomial().degree();
+        let basis = chebyshev_basis_at(stimulus, degree, &self.free_polynomial().domain());
 
         let multiplier = self
-            .constraint
+            .constraint()
             .as_ref()
             .map_or_else(E::one, |c| c.multiplicative.evaluate(stimulus));
 
@@ -173,7 +297,7 @@ where
     }
 
     pub fn response_unchecked(&self, stimulus: E) -> E {
-        self.curve.evaluate(stimulus)
+        self.calibration_curve().evaluate(stimulus)
     }
 }
 

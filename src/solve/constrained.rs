@@ -1,3 +1,25 @@
+//! Constrained calibration fitting.
+//!
+//! This module implements fitting for calibration models of the form
+//!
+//! ```text
+//! f(x) = a(x) + m(x) q(x)
+//! ```
+//!
+//! where:
+//!
+//! - `a(x)` is the additive constraint,
+//! - `m(x)` is the multiplicative constraint,
+//! - `q(x)` is the free polynomial fitted by least squares.
+//!
+//! This representation is useful for imposing structural properties on the
+//! final calibration curve. For example, choosing `a(x) = 0` and `m(x) = x`
+//! forces the fitted curve to pass through the origin.
+//!
+//! The fitting routines in this module solve for the coefficients of `q(x)`.
+//! The final [`Fit`] stores both the free polynomial and the fully composed
+//! calibration curve.
+//!
 use crate::{
     Problem,
     fit::{Constraint, Fit, FitMethod},
@@ -7,26 +29,30 @@ use crate::{
 use super::FitError;
 
 use ndarray::{Array1, Array2};
-use ndarray_linalg::{Cholesky, Lapack, Scalar, Solve, SolveTriangularInto, UPLO};
+use ndarray_linalg::{Lapack, Scalar};
 use num_traits::{Float, FromPrimitive};
-use poly_series::{
-    ChebyshevError, ChebyshevSeries, FitPolynomialSeries, PolynomialRoots, PolynomialSeries,
-};
-use statrs::distribution::{ChiSquared, ContinuousCDF};
+use poly_series::{ChebyshevSeries, PolynomialSeries};
 use std::ops::Range;
 
 impl<E> Problem<E>
 where
     E: Float + FromPrimitive + Scalar<Real = E> + Lapack,
 {
+    /// Fit a constrained candidate polynomial of degree `degree`.
+    ///
+    /// The uncertainty model determines which numerical fitting method is used:
+    ///
+    /// - [`Uncertainty::None`] uses ordinary least squares.
+    /// - [`Uncertainty::YDiagonal`] uses weighted least squares.
+    /// - [`Uncertainty::YCovariance`] uses generalized least squares.
+    ///
+    /// Fitting with uncertainty in `x` is intentionally not implemented yet;
+    /// those paths return [`FitError::Unsupported`].
     pub(super) fn fit_degree_constrained(
         &self,
         degree: usize,
         constraint: &Constraint<E>,
-    ) -> Result<Fit<E>, FitError<E>>
-    where
-        E: Float + FromPrimitive + Scalar<Real = E> + Lapack,
-    {
+    ) -> Result<Fit<E>, FitError<E>> {
         match &self.uncertainty {
             Uncertainty::None => self.fit_degree_constrained_ols(degree, constraint),
 
@@ -48,14 +74,20 @@ where
         }
     }
 
+    /// Fit a constrained model using ordinary least squares.
+    ///
+    /// This solves
+    ///
+    /// ```text
+    /// y_i - a(x_i) = m(x_i) q(x_i)
+    /// ```
+    ///
+    /// for the coefficients of the free polynomial `q`.
     fn fit_degree_constrained_ols(
         &self,
         degree: usize,
         constraint: &Constraint<E>,
-    ) -> Result<Fit<E>, FitError<E>>
-    where
-        E: Float + FromPrimitive + Scalar<Real = E> + Lapack,
-    {
+    ) -> Result<Fit<E>, FitError<E>> {
         let xs = self
             .x
             .as_slice()
@@ -73,15 +105,21 @@ where
         )
     }
 
+    /// Fit a constrained model using weighted least squares.
+    ///
+    /// The supplied `uy` values are standard uncertainties on the response
+    /// observations. Each row is scaled by `1 / uy_i`, which is equivalent to
+    /// minimising
+    ///
+    /// ```text
+    /// Σ ((y_i - f(x_i)) / uy_i)^2
+    /// ```
     fn fit_degree_constrained_wls_diagonal(
         &self,
         degree: usize,
         constraint: &Constraint<E>,
         uy: &Array1<E>,
-    ) -> Result<Fit<E>, FitError<E>>
-    where
-        E: Float + FromPrimitive + Scalar<Real = E> + Lapack,
-    {
+    ) -> Result<Fit<E>, FitError<E>> {
         let xs = self
             .x
             .as_slice()
@@ -113,15 +151,16 @@ where
         )
     }
 
+    /// Fit a constrained model using generalized least squares.
+    ///
+    /// The response covariance matrix `vy` is Cholesky-whitened before solving
+    /// the least-squares system.
     fn fit_degree_constrained_gls_covariance(
         &self,
         degree: usize,
         constraint: &Constraint<E>,
         vy: &Array2<E>,
-    ) -> Result<Fit<E>, FitError<E>>
-    where
-        E: Float + FromPrimitive + Scalar<Real = E> + Lapack,
-    {
+    ) -> Result<Fit<E>, FitError<E>> {
         use ndarray_linalg::{Cholesky, Diag, SolveTriangularInto, UPLO};
 
         let xs = self
@@ -149,7 +188,7 @@ where
 
     fn fit_degree_constrained_odr_diagonal(
         &self,
-        degree: usize,
+        _degree: usize,
         _constraint: &Constraint<E>,
         _ux: &Array1<E>,
         _uy: &Array1<E>,
@@ -161,7 +200,7 @@ where
 
     fn fit_degree_constrained_odr_covariance(
         &self,
-        degree: usize,
+        _degree: usize,
         _constraint: &Constraint<E>,
         _vx: &Array2<E>,
         _vy: &Array2<E>,
@@ -178,10 +217,7 @@ where
         rhs: Array1<E>,
         constraint: Option<Constraint<E>>,
         method: FitMethod,
-    ) -> Result<Fit<E>, FitError<E>>
-    where
-        E: Float + FromPrimitive + Scalar<Real = E> + Lapack,
-    {
+    ) -> Result<Fit<E>, FitError<E>> {
         let xs = self
             .x
             .as_slice()
@@ -210,6 +246,19 @@ where
     }
 }
 
+/// Return the shifted response vector for a constrained model.
+///
+/// For a constraint
+///
+/// ```text
+/// f(x) = a(x) + m(x) q(x)
+/// ```
+///
+/// the fitted system is written as
+///
+/// ```text
+/// y_i - a(x_i) = m(x_i) q(x_i)
+/// ```
 fn constrained_response<E>(x: &Array1<E>, y: &Array1<E>, constraint: &Constraint<E>) -> Array1<E>
 where
     E: Float + FromPrimitive,
@@ -220,6 +269,19 @@ where
         .collect()
 }
 
+/// Construct the constrained Chebyshev design matrix.
+///
+/// The unconstrained Chebyshev basis row is
+///
+/// ```text
+/// [T_0(t_i), T_1(t_i), ..., T_n(t_i)]
+/// ```
+///
+/// For a constrained model this is multiplied by `m(x_i)`, giving
+///
+/// ```text
+/// [m(x_i)T_0(t_i), m(x_i)T_1(t_i), ..., m(x_i)T_n(t_i)].
+/// ```
 fn constrained_design_matrix<E>(
     xs: &[E],
     degree: usize,
@@ -299,7 +361,7 @@ mod constrained_fit_tests {
 
     fn assert_fits_y_equals_two_x(fit: &Fit<f64>) {
         for x in [-1.0, -0.5, 0.0, 0.5, 1.0] {
-            assert_close(fit.curve.evaluate(x), 2.0 * x);
+            assert_close(fit.calibration_curve().evaluate(x), 2.0 * x);
         }
     }
 
@@ -348,14 +410,14 @@ mod constrained_fit_tests {
 
         let fit = problem.fit_degree_constrained_ols(0, &constraint).unwrap();
 
-        assert!(matches!(fit.method, FitMethod::OrdinaryLeastSquares));
-        assert!(fit.constraint.is_some());
+        assert!(matches!(fit.method(), FitMethod::OrdinaryLeastSquares));
+        assert!(fit.constraint().is_some());
         assert_fits_y_equals_two_x(&fit);
 
         // Free polynomial should be q(x) = 2, because y = x * q(x).
-        assert_close(fit.free_polynomial.evaluate(-1.0), 2.0);
-        assert_close(fit.free_polynomial.evaluate(0.0), 2.0);
-        assert_close(fit.free_polynomial.evaluate(1.0), 2.0);
+        assert_close(fit.free_polynomial().evaluate(-1.0), 2.0);
+        assert_close(fit.free_polynomial().evaluate(0.0), 2.0);
+        assert_close(fit.free_polynomial().evaluate(1.0), 2.0);
     }
 
     #[test]
@@ -376,10 +438,13 @@ mod constrained_fit_tests {
             .fit_degree_constrained_ols(0, &constraint)
             .unwrap();
 
-        assert!(matches!(wls.method, FitMethod::WeightedLeastSquares));
+        assert!(matches!(wls.method(), FitMethod::WeightedLeastSquares));
 
         for x in [-1.0, -0.5, 0.0, 0.5, 1.0] {
-            assert_close(wls.curve.evaluate(x), ols.curve.evaluate(x));
+            assert_close(
+                wls.calibration_curve().evaluate(x),
+                ols.calibration_curve().evaluate(x),
+            );
         }
     }
 
@@ -414,11 +479,11 @@ mod constrained_fit_tests {
         .fit_degree_constrained_ols(0, &constraint)
         .unwrap();
 
-        let weighted_error = (weighted.curve.evaluate(-1.0) - (-2.0)).abs();
-        let unweighted_error = (unweighted.curve.evaluate(-1.0) - (-2.0)).abs();
+        let weighted_error = (weighted.calibration_curve().evaluate(-1.0) - (-2.0)).abs();
+        let unweighted_error = (unweighted.calibration_curve().evaluate(-1.0) - (-2.0)).abs();
 
         assert!(weighted_error < unweighted_error);
-        assert!(matches!(weighted.method, FitMethod::WeightedLeastSquares));
+        assert!(matches!(weighted.method(), FitMethod::WeightedLeastSquares));
     }
 
     #[test]
@@ -461,10 +526,13 @@ mod constrained_fit_tests {
             .fit_degree_constrained_wls_diagonal(0, &constraint, &uy)
             .unwrap();
 
-        assert!(matches!(gls.method, FitMethod::GeneralizedLeastSquares));
+        assert!(matches!(gls.method(), FitMethod::GeneralizedLeastSquares));
 
         for x in [-1.0, -0.5, 0.0, 0.5, 1.0] {
-            assert_close(gls.curve.evaluate(x), wls.curve.evaluate(x));
+            assert_close(
+                gls.calibration_curve().evaluate(x),
+                wls.calibration_curve().evaluate(x),
+            );
         }
     }
 
@@ -485,7 +553,7 @@ mod constrained_fit_tests {
             .fit_degree_constrained_gls_covariance(0, &constraint, &vy)
             .unwrap();
 
-        assert!(matches!(fit.method, FitMethod::GeneralizedLeastSquares));
+        assert!(matches!(fit.method(), FitMethod::GeneralizedLeastSquares));
         assert_fits_y_equals_two_x(&fit);
     }
 
@@ -500,8 +568,8 @@ mod constrained_fit_tests {
 
         let fit = problem.fit_degree(0).unwrap();
 
-        assert!(matches!(fit.method, FitMethod::OrdinaryLeastSquares));
-        assert!(fit.constraint.is_some());
+        assert!(matches!(fit.method(), FitMethod::OrdinaryLeastSquares));
+        assert!(fit.constraint().is_some());
         assert_fits_y_equals_two_x(&fit);
     }
 
@@ -518,8 +586,8 @@ mod constrained_fit_tests {
 
         let fit = problem.fit_degree(0).unwrap();
 
-        assert!(matches!(fit.method, FitMethod::WeightedLeastSquares));
-        assert!(fit.constraint.is_some());
+        assert!(matches!(fit.method(), FitMethod::WeightedLeastSquares));
+        assert!(fit.constraint().is_some());
         assert_fits_y_equals_two_x(&fit);
     }
 
@@ -542,8 +610,8 @@ mod constrained_fit_tests {
 
         let fit = problem.fit_degree(0).unwrap();
 
-        assert!(matches!(fit.method, FitMethod::GeneralizedLeastSquares));
-        assert!(fit.constraint.is_some());
+        assert!(matches!(fit.method(), FitMethod::GeneralizedLeastSquares));
+        assert!(fit.constraint().is_some());
         assert_fits_y_equals_two_x(&fit);
     }
 }

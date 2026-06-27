@@ -32,5 +32,6 @@ mod score;
 mod solve;
 
 pub use builder::ProblemBuilder;
+pub use evaluation::{Estimate, EvaluationError};
 pub use problem::Problem;
 pub use score::ScoringStrategy;

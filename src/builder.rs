@@ -112,7 +112,7 @@ impl<E> ProblemBuilder<E> {
     /// `x` contains the physical independent/reference values and `y` containts the physical
     /// dependent/response values
     #[must_use]
-    pub fn with_observations(mut self, x: impl Into<Array1<E>>, y: impl Into<Array1<E>>) -> Self {
+    pub fn with_observations(self, x: impl Into<Array1<E>>, y: impl Into<Array1<E>>) -> Self {
         self.with_data(x, y)
     }
 

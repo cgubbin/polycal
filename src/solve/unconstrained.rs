@@ -1,3 +1,20 @@
+//! Unconstrained calibration fitting.
+//!
+//! This module implements fitting paths for calibration models without an
+//! additive or multiplicative constraint. In this case the fitted Chebyshev
+//! series is itself the final calibration curve.
+//!
+//! Supported uncertainty models are:
+//!
+//! - [`Uncertainty::None`]: ordinary least squares,
+//! - [`Uncertainty::YDiagonal`]: weighted least squares using independent
+//!   response standard uncertainties,
+//! - [`Uncertainty::YCovariance`]: generalized least squares using a full
+//!   response covariance matrix.
+//!
+//! Uncertainty in the stimulus variable is not implemented in this release.
+//! Those paths return [`FitError::Unsupported`].
+
 use crate::{
     Problem,
     fit::{Fit, FitMethod},
@@ -15,6 +32,11 @@ impl<E> Problem<E>
 where
     E: Float + FromPrimitive + Scalar<Real = E> + Lapack,
 {
+    /// Fit a candidate polynomial of degree `degree`.
+    ///
+    /// If the problem has a constraint, this delegates to the constrained
+    /// fitting implementation. Otherwise, the uncertainty model determines
+    /// whether ordinary, weighted or generalized least squares is used.
     pub(super) fn fit_degree(&self, degree: usize) -> Result<Fit<E>, FitError<E>> {
         if let Some(constraint) = self.constraint.as_ref() {
             return self.fit_degree_constrained(degree, constraint);
@@ -33,6 +55,7 @@ where
         }
     }
 
+    /// Fit an unconstrained candidate using ordinary least squares.
     pub(super) fn fit_degree_ols(&self, degree: usize) -> Result<Fit<E>, FitError<E>> {
         let report = ChebyshevSeries::fit_report_on_domain(
             self.x
@@ -53,6 +76,11 @@ where
         ))
     }
 
+    /// Fit an unconstrained candidate using weighted least squares.
+    ///
+    /// The entries of `uy` are interpreted as standard uncertainties on the
+    /// response observations. They are converted to inverse-variance weights
+    /// `1 / uy²` before fitting.
     pub(super) fn fit_degree_wls_diagonal(
         &self,
         degree: usize,
@@ -80,6 +108,16 @@ where
         ))
     }
 
+    /// Fit an unconstrained candidate using generalized least squares.
+    ///
+    /// The response covariance matrix is Cholesky-whitened, solving the
+    /// equivalent least-squares problem
+    ///
+    /// ```text
+    /// min ||L⁻¹(Ac - y)||²
+    /// ```
+    ///
+    /// where `V = LLᵀ` is the response covariance matrix.
     pub(super) fn fit_degree_gls_covariance(
         &self,
         degree: usize,
@@ -127,7 +165,7 @@ where
 
     fn fit_degree_odr_diagonal(
         &self,
-        degree: usize,
+        _degree: usize,
         _ux: &Array1<E>,
         _uy: &Array1<E>,
     ) -> Result<Fit<E>, FitError<E>> {
@@ -138,7 +176,7 @@ where
 
     fn fit_degree_odr_covariance(
         &self,
-        degree: usize,
+        _degree: usize,
         _vx: &Array2<E>,
         _vy: &Array2<E>,
     ) -> Result<Fit<E>, FitError<E>> {
@@ -148,6 +186,16 @@ where
     }
 }
 
+/// Fit an unconstrained candidate using generalized least squares.
+///
+/// The response covariance matrix is Cholesky-whitened, solving the
+/// equivalent least-squares problem
+///
+/// ```text
+/// min ||L⁻¹(Ac - y)||²
+/// ```
+///
+/// where `V = LLᵀ` is the response covariance matrix.
 fn y_uncertainty_to_weights<E>(uy: &Array1<E>) -> Result<Array1<E>, FitError<E>>
 where
     E: Float,
@@ -180,7 +228,7 @@ mod fit_degree_tests {
 
     fn assert_curve_matches_line(fit: &Fit<f64>) {
         for x in [0.0, 0.5, 1.0, 1.5, 2.0] {
-            assert_close(fit.curve.evaluate(x), 1.0 + 2.0 * x);
+            assert_close(fit.calibration_curve().evaluate(x), 1.0 + 2.0 * x);
         }
     }
 
@@ -203,15 +251,15 @@ mod fit_degree_tests {
 
         let fit = problem.fit_degree_ols(1).unwrap();
 
-        assert!(matches!(fit.method, FitMethod::OrdinaryLeastSquares));
-        assert!(fit.constraint.is_none());
-        assert_eq!(fit.response_domain, 1.0..5.0);
-        assert_eq!(fit.curve.domain(), 0.0..2.0);
-        assert_eq!(fit.free_polynomial.domain(), 0.0..2.0);
+        assert!(matches!(fit.method(), FitMethod::OrdinaryLeastSquares));
+        assert!(fit.constraint().is_none());
+        assert_eq!(fit.response_domain(), 1.0..5.0);
+        assert_eq!(fit.calibration_curve().domain(), 0.0..2.0);
+        assert_eq!(fit.free_polynomial().domain(), 0.0..2.0);
 
         assert_curve_matches_line(&fit);
 
-        for residual in fit.residuals.iter() {
+        for residual in fit.residuals().iter() {
             assert_close(*residual, 0.0);
         }
     }
@@ -231,7 +279,7 @@ mod fit_degree_tests {
 
         let fit = problem.fit_degree_ols(1).unwrap();
 
-        assert_eq!(fit.curve.domain(), 0.0..2.0);
+        assert_eq!(fit.calibration_curve().domain(), 0.0..2.0);
         assert_curve_matches_line(&fit);
     }
 
@@ -251,10 +299,13 @@ mod fit_degree_tests {
 
         let ols = ols_problem().fit_degree_ols(1).unwrap();
 
-        assert!(matches!(weighted.method, FitMethod::WeightedLeastSquares));
+        assert!(matches!(weighted.method(), FitMethod::WeightedLeastSquares));
 
         for x in [0.0, 0.5, 1.0, 1.5, 2.0] {
-            assert_close(weighted.curve.evaluate(x), ols.curve.evaluate(x));
+            assert_close(
+                weighted.calibration_curve().evaluate(x),
+                ols.calibration_curve().evaluate(x),
+            );
         }
     }
 
@@ -284,11 +335,12 @@ mod fit_degree_tests {
         };
         let unweighted = unweighted_problem.fit_degree_ols(1).unwrap();
 
-        let weighted_error_at_one = Float::abs(weighted.curve.evaluate(1.0) - 3.0);
-        let unweighted_error_at_one = Float::abs(unweighted.curve.evaluate(1.0) - 3.0);
+        let weighted_error_at_one = Float::abs(weighted.calibration_curve().evaluate(1.0) - 3.0);
+        let unweighted_error_at_one =
+            Float::abs(unweighted.calibration_curve().evaluate(1.0) - 3.0);
 
         assert!(weighted_error_at_one < unweighted_error_at_one);
-        assert!(matches!(weighted.method, FitMethod::WeightedLeastSquares));
+        assert!(matches!(weighted.method(), FitMethod::WeightedLeastSquares));
     }
 
     #[test]
@@ -325,10 +377,13 @@ mod fit_degree_tests {
         let gls = problem.fit_degree_gls_covariance(1, &vy).unwrap();
         let wls = problem.fit_degree_wls_diagonal(1, &uy).unwrap();
 
-        assert!(matches!(gls.method, FitMethod::GeneralizedLeastSquares));
+        assert!(matches!(gls.method(), FitMethod::GeneralizedLeastSquares));
 
         for x in [0.0, 0.5, 1.0, 1.5, 2.0] {
-            assert_close(gls.curve.evaluate(x), wls.curve.evaluate(x));
+            assert_close(
+                gls.calibration_curve().evaluate(x),
+                wls.calibration_curve().evaluate(x),
+            );
         }
     }
 
@@ -346,7 +401,7 @@ mod fit_degree_tests {
 
         let fit = problem.fit_degree_gls_covariance(1, &vy).unwrap();
 
-        assert!(matches!(fit.method, FitMethod::GeneralizedLeastSquares));
+        assert!(matches!(fit.method(), FitMethod::GeneralizedLeastSquares));
         assert_curve_matches_line(&fit);
     }
 
@@ -376,7 +431,7 @@ mod fit_degree_tests {
 
         let fit = problem.fit_degree(1).unwrap();
 
-        assert!(matches!(fit.method, FitMethod::OrdinaryLeastSquares));
+        assert!(matches!(fit.method(), FitMethod::OrdinaryLeastSquares));
         assert_curve_matches_line(&fit);
     }
 
@@ -391,7 +446,7 @@ mod fit_degree_tests {
 
         let fit = problem.fit_degree(1).unwrap();
 
-        assert!(matches!(fit.method, FitMethod::WeightedLeastSquares));
+        assert!(matches!(fit.method(), FitMethod::WeightedLeastSquares));
         assert_curve_matches_line(&fit);
     }
 
@@ -412,7 +467,7 @@ mod fit_degree_tests {
 
         let fit = problem.fit_degree(1).unwrap();
 
-        assert!(matches!(fit.method, FitMethod::GeneralizedLeastSquares));
+        assert!(matches!(fit.method(), FitMethod::GeneralizedLeastSquares));
         assert_curve_matches_line(&fit);
     }
 }
