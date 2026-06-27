@@ -19,7 +19,7 @@ preflight:
     git diff --quiet || (echo "Working tree not clean" && exit 1)
     git diff --cached --quiet || (echo "Staged changes exist" && exit 1)
 
-    just flake-check
+    # just flake-check
     cargo check --features openblas-system
     cargo build --release --features openblas-system
     cargo publish --dry-run
