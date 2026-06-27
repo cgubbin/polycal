@@ -55,11 +55,9 @@
 
         packages = with pkgs; [
           rustToolchain
-          fenix.packages.${system}.rust-analyzer
 
           cargo-nextest
           cargo-edit
-          cargo-llvm-cov
           cargo-readme
           cargo-release
           release-plz
