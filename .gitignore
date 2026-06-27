@@ -1,5 +1,5 @@
 /.direnv
-/polycal/target
-/polycal/.cargo
+/target
+/.cargo
 /*.txt
 

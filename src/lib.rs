@@ -25,46 +25,12 @@
 //!
 
 mod builder;
+mod evaluation;
+mod fit;
 mod problem;
+mod score;
+mod solve;
 
 pub use builder::ProblemBuilder;
 pub use problem::Problem;
-
-use ndarray::{Array1, Array2};
-use polynomial_series::ChebyshevSeries;
-
-#[derive(Debug)]
-pub enum Uncertainty<E> {
-    None,
-    YDiagonal { uy: Array1<E> },
-    YCovariance { vy: Array2<E> },
-    XYDiagonal { ux: Array1<E>, uy: Array1<E> },
-    XYCovariance { vx: Array2<E>, vy: Array2<E> },
-}
-
-#[derive(Clone, Debug)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-/// A constraint.
-///
-/// Given a constraint we use the problem y = `p_n(x`, a) * multiplicative(x) + additive(x). A
-/// carefully constructed constraint can ensure the response variable and it's derivatives obeys
-/// certain pre-conditions such as passing through the origin.
-pub struct Constraint<E> {
-    /// Additive component of the constraint
-    pub(crate) additive: ChebyshevSeries<E>,
-    /// Multiplicative component of the constraint
-    pub(crate) multiplicative: ChebyshevSeries<E>,
-}
-
-/// Different scoring strategies for fit procedure
-#[derive(Copy, Clone, Debug)]
-pub enum ScoringStrategy {
-    /// Akaike's method
-    Aic,
-    /// Akaike's corrected method
-    Aicc,
-    /// Bayesian
-    Bic,
-    /// Pure chi-squared residuals
-    ChiSquare,
-}
+pub use score::ScoringStrategy;

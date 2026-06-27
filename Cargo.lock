@@ -85,6 +85,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
+name = "confi"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f6fe028c53fc027458505ff467ffc667eba8fa87e214e89401e4743ac223f77e"
+dependencies = [
+ "num-traits",
+ "thiserror",
+]
+
+[[package]]
 name = "crc32fast"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -378,22 +388,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "19f132c84eca552bf34cab8ec81f1c1dcc229b811638f9d283dceabe58c5569e"
 
 [[package]]
-name = "polycal"
-version = "0.1.10"
-dependencies = [
- "approx",
- "ndarray",
- "polynomial_series",
- "serde",
-]
-
-[[package]]
-name = "polynomial_series"
-version = "0.1.0"
+name = "poly_series"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b577dbe1e58dcabafb25292712fedd3b33b86d033c8fee04773c2b3a157b2f17"
 dependencies = [
  "ndarray",
  "ndarray-linalg",
  "num-traits",
+ "thiserror",
+]
+
+[[package]]
+name = "polycal"
+version = "0.1.10"
+dependencies = [
+ "approx",
+ "confi",
+ "ndarray",
+ "ndarray-linalg",
+ "num-traits",
+ "poly_series",
+ "serde",
+ "statrs",
  "thiserror",
 ]
 
@@ -588,6 +605,16 @@ name = "simd-adler32"
 version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "703d5c7ef118737c72f1af64ad2f6f8c5e1921f818cdcb97b8fe6fc69bf66214"
+
+[[package]]
+name = "statrs"
+version = "0.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2a3fe7c28c6512e766b0874335db33c94ad7b8f9054228ae1c2abd47ce7d335e"
+dependencies = [
+ "approx",
+ "num-traits",
+]
 
 [[package]]
 name = "subtle"

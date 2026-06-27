@@ -31,7 +31,7 @@
       };
 
       rustToolchain = pkgs.fenix.fromToolchainFile {
-        file = ./polycal/rust-toolchain.toml;
+        file = ./rust-toolchain.toml;
         sha256 = "mvUGEOHYJpn3ikC5hckneuGixaC+yGrkMM/liDIDgoU=";
       };
 
@@ -58,6 +58,7 @@
 
           cargo-nextest
           cargo-edit
+          cargo-llvm-cov
           cargo-readme
           cargo-release
           release-plz
@@ -118,7 +119,7 @@
       };
 
       rustToolchain = pkgs.fenix.fromToolchainFile {
-        file = ./polycal/rust-toolchain.toml;
+        file = ./rust-toolchain.toml;
         sha256 = "mvUGEOHYJpn3ikC5hckneuGixaC+yGrkMM/liDIDgoU=";
       };
 
@@ -156,7 +157,7 @@
       };
 
       rustToolchain = pkgs.fenix.fromToolchainFile {
-        file = ./polycal/rust-toolchain.toml;
+        file = ./rust-toolchain.toml;
         sha256 = "mvUGEOHYJpn3ikC5hckneuGixaC+yGrkMM/liDIDgoU=";
       };
 
